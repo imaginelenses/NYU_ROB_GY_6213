@@ -161,7 +161,7 @@ if False:
     run_my_model_on_trial(filename)
 
 # Plot the motion model predictions for each trial in a folder
-if False:
+if True:
     directory = ('./data_straight/')
     plot_many_trial_predictions(directory)
 
