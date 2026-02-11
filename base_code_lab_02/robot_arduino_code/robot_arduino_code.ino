@@ -26,13 +26,13 @@ int current_num_lidar_rays;
 
 // Motor Control setup
 // Swapped Left and Right
-#define LeftSpeedPin 9            // Right PWM pin connect MODEL-X ENA
-#define LeftMotorDirPin1 11       // Right Motor direction pin 1 to MODEL-X IN1 
-#define LeftMotorDirPin2 12       // Right Motor direction pin 2 to MODEL-X IN2
+#define RightSpeedPin 9            // Right PWM pin connect MODEL-X ENA
+#define RightMotorDirPin1 11       // Right Motor direction pin 1 to MODEL-X IN1 
+#define RightMotorDirPin2 12       // Right Motor direction pin 2 to MODEL-X IN2
 
-#define RightSpeedPin 6             // Left PWM pin connect MODEL-X ENB
-#define RightMotorDirPin1 7         // Left Motor direction pin 1 to MODEL-X IN3 
-#define RightMotorDirPin2 8         // Left Motor direction pin 1 to MODEL-X IN4 
+#define LeftSpeedPin 6             // Left PWM pin connect MODEL-X ENB
+#define LeftMotorDirPin1 7         // Left Motor direction pin 1 to MODEL-X IN3 
+#define LeftMotorDirPin2 8         // Left Motor direction pin 1 to MODEL-X IN4 
 // Servo control setup
 #include <Servo.h>
 #define ServoPin 10                // Servo control pin
@@ -41,7 +41,7 @@ Servo myServo;
 // Encoder setup
 #define EncoderOutputA 4          // Encoder output pin A
 #define EncoderOutputB 5          // Encoder output pin B
-#define steering_angle_center 90  // REPLACE with team center angle for servor steering
+#define steering_angle_center 96  // REPLACE with team center angle for servor steering
 int a_state;
 int encoder_a_last_state; 
 int encoder_count;
