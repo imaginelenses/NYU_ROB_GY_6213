@@ -5,9 +5,9 @@
 #define SendDeltaTimeInMs 100      // Number ms between messages sent to laptop
 #define ReceiveDeltaTimeInMs 10    // Number ms between checking for control signals sent from laptop
 #define NoSignalDeltaTimeInMs 2000 // Number ms between message receives from laptop before stopping robot
-char ssid[] = "Tenda_9C90E0";//"Tenda_9C95E0";//"Tenda_9C90E0";      // REPLACE with your team's router ssid
-char pass[] = "78972629";  //"82168926";//"78972629";        // REPLACE with your team's router password"78972629"
-char remoteIP[] = "192.168.0.199"; // "192.168.0.199"; // REPLACE with your laptop's IP address on your team's router
+char ssid[] = "Tenda_007";      // REPLACE with your team's router ssid
+char pass[] = "teNda_007";          // REPLACE with your team's router password
+char remoteIP[] = "10.0.0.10"; // REPLACE with your laptop's IP address on your team's router
 unsigned int localPort = 4010;     // local port to listen on - no need to change
 unsigned int remotePort = 4010;    // local port to listen on - no need to change
 int status = WL_IDLE_STATUS;
@@ -25,9 +25,11 @@ String current_lidar_scan_data;
 int current_num_lidar_rays;
 
 // Motor Control setup
+// Swapped Left and Right
 #define RightSpeedPin 9            // Right PWM pin connect MODEL-X ENA
-#define RightMotorDirPin1 12       // Right Motor direction pin 1 to MODEL-X IN1 
-#define RightMotorDirPin2 11       // Right Motor direction pin 2 to MODEL-X IN2
+#define RightMotorDirPin1 11       // Right Motor direction pin 1 to MODEL-X IN1 
+#define RightMotorDirPin2 12       // Right Motor direction pin 2 to MODEL-X IN2
+
 #define LeftSpeedPin 6             // Left PWM pin connect MODEL-X ENB
 #define LeftMotorDirPin1 7         // Left Motor direction pin 1 to MODEL-X IN3 
 #define LeftMotorDirPin2 8         // Left Motor direction pin 1 to MODEL-X IN4 
@@ -40,7 +42,7 @@ Servo myServo;
 // Encoder setup
 #define EncoderOutputA 4          // Encoder output pin A
 #define EncoderOutputB 5          // Encoder output pin B
-#define steering_angle_center 75  // REPLACE with team center angle for servor steering
+#define steering_angle_center 96  // REPLACE with team center angle for servor steering
 int a_state;
 int encoder_a_last_state; 
 int encoder_count;
@@ -162,8 +164,8 @@ void forward(int speed)
   digitalWrite(RightMotorDirPin2,LOW);
   digitalWrite(LeftMotorDirPin1,HIGH);
   digitalWrite(LeftMotorDirPin2,LOW);
-  analogWrite(LeftSpeedPin, speed * 0.75);
-  analogWrite(RightSpeedPin, speed);
+  analogWrite(LeftSpeedPin, speed);
+  analogWrite(RightSpeedPin, speed * 0.495 );
 }
 
 // Receive control signal messages from laptop, but only have delta time has passed, e.g. 10ms

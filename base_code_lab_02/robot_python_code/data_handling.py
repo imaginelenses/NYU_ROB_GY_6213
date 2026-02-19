@@ -69,6 +69,8 @@ def plot_many_trial_predictions(directory):
         plot_color = plot_color_list[count]
         run_my_model_on_trial(directory + filename, False, plot_color)
         count += 1
+        if count >= len(plot_color_list):
+            count = 0
     plt.show()
 
 # Calculate the predicted distance from single trial for a motion model
@@ -129,7 +131,7 @@ def sample_model(num_samples):
     traj_duration = 10
     for i in range(num_samples):
         model = motion_models.MyMotionModel([0,0,0], 0)
-        traj_x, traj_y, traj_theta = model.generate_simulated_traj(traj_duration)
+        traj_t, traj_x, traj_y, traj_theta = model.generate_simulated_traj(traj_duration)
         plt.plot(traj_x, traj_y, 'k.')
 
     plt.title('Sampling the model')
@@ -141,35 +143,53 @@ def sample_model(num_samples):
 ######### MAIN ########
 
 # Some sample data to test with
+# Sample
+# files_and_data = [
+#     ['robot_data_60_0_28_01_26_13_41_44.pkl', 67/100], # filename, measured distance in meters
+#     ['robot_data_60_0_28_01_26_13_43_41.pkl', 68/100],
+#     ['robot_data_60_0_28_01_26_13_37_15.pkl', 113/100],
+#     ['robot_data_60_0_28_01_26_13_35_18.pkl', 107/100],
+#     ['robot_data_60_0_28_01_26_13_41_10.pkl', 65/100],
+#     ['robot_data_60_0_28_01_26_13_42_55.pkl', 70/100],
+#     ['robot_data_60_0_28_01_26_13_39_36.pkl', 138/100],
+#     ['robot_data_60_0_28_01_26_13_42_19.pkl', 69/100],
+#     ['robot_data_60_0_28_01_26_13_36_10.pkl', 109/100],
+#     ['robot_data_60_0_28_01_26_13_33_20.pkl', 100/100],
+#     ['robot_data_60_0_28_01_26_13_34_28.pkl', 103/100],
+#     ]
+
+inches_to_meters = 0.0254
+
 files_and_data = [
-    ['robot_data_60_0_28_01_26_13_41_44.pkl', 67/100], # filename, measured distance in meters
-    ['robot_data_60_0_28_01_26_13_43_41.pkl', 68/100],
-    ['robot_data_60_0_28_01_26_13_37_15.pkl', 113/100],
-    ['robot_data_60_0_28_01_26_13_35_18.pkl', 107/100],
-    ['robot_data_60_0_28_01_26_13_41_10.pkl', 65/100],
-    ['robot_data_60_0_28_01_26_13_42_55.pkl', 70/100],
-    ['robot_data_60_0_28_01_26_13_39_36.pkl', 138/100],
-    ['robot_data_60_0_28_01_26_13_42_19.pkl', 69/100],
-    ['robot_data_60_0_28_01_26_13_36_10.pkl', 109/100],
-    ['robot_data_60_0_28_01_26_13_33_20.pkl', 100/100],
-    ['robot_data_60_0_28_01_26_13_34_28.pkl', 103/100],
-    ]
+    ['robot_data_70_0_12_02_26_19_09_16.pkl', inches_to_meters * (48 + 1/4)],
+    ['robot_data_70_0_12_02_26_19_12_32.pkl', inches_to_meters * (49 + 7/8)],
+    ['robot_data_70_0_12_02_26_19_14_16.pkl', inches_to_meters * (49 + 5/8)],
+    ['robot_data_70_0_12_02_26_19_16_32.pkl', inches_to_meters * (98)],
+    ['robot_data_70_0_12_02_26_19_18_50.pkl', inches_to_meters * (100.5)],
+    ['robot_data_70_0_12_02_26_19_21_16.pkl', inches_to_meters * (99)],
+    ['robot_data_70_0_12_02_26_19_23_39.pkl', inches_to_meters * (150)],
+    ['robot_data_70_0_12_02_26_19_26_05.pkl', inches_to_meters * (149)],
+    ['robot_data_70_0_12_02_26_19_27_27.pkl', inches_to_meters * (149)],
+]
 
 # Plot the motion model predictions for a single trial
 if False:
-    filename = './data_straight/robot_data_60_0_28_01_26_13_36_10.pkl'
+    # filename = './data_straight/robot_data_60_0_28_01_26_13_36_10.pkl'
+    filename = './data_steer/robot_data_70_10_11_02_26_20_25_15.pkl'
     run_my_model_on_trial(filename)
 
 # Plot the motion model predictions for each trial in a folder
 if True:
-    directory = ('./data_straight/')
+    directory = ('./steer/') # Subset of steer_final due to limited colors
+    plot_many_trial_predictions(directory)
+    directory = ('./data/')
     plot_many_trial_predictions(directory)
 
 # A list of files to open, process, and plot - for comparing predicted with actual distances
 if False:
-    directory = ('./data_straight/')    
+    directory = ('./data/')    
     process_files_and_plot(files_and_data, directory)
 
 # Try to sample with the motion model
 if False:
-    sample_model(200)
+    sample_model(100)
