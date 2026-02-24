@@ -11,7 +11,8 @@ bufferSize = 1024
 
 # Camera parameters
 camera_id = 0
-marker_length = 0.071
+inches_to_meters = 0.0254
+marker_length = 7 * inches_to_meters  
 # camera_matrix = np.array([[1.41089024e+03, 0.00000000e+00 ,5.34757040e+02],
 #  [0.00000000e+00 ,1.40977771e+03, 4.63300611e+02],
 #  [0.00000000e+00 ,0.00000000e+00 ,1.00000000e+00]], dtype=np.float32)
