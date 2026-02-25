@@ -240,5 +240,5 @@ def main():
     ui.timer(0.1, control_loop)
 
 # Run the gui
-ui.run(native=True)
+ui.run()
 
