@@ -199,10 +199,11 @@ class CameraSensor:
     def __init__(self, camera_id):
         self.camera_id = camera_id
         self.cap = cv2.VideoCapture(camera_id)
-        self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_6X6_250)
+        self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
         self.parameters = aruco.DetectorParameters()
         self.detector = aruco.ArucoDetector(self.aruco_dict, self.parameters)
         
+
     # Get a new pose estimate from a camera image
     def get_signal(self, last_camera_signal):
         camera_signal = last_camera_signal
@@ -223,9 +224,11 @@ class CameraSensor:
         if ids is not None:
             # Estimate pose for each detected marker
             for i in range(len(ids)):
-                rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[i], parameters.marker_length, parameters.camera_matrix, parameters.dist_coeffs)
-                pose_estimate = [tvec[0][0][0], tvec[0][0][1], tvec[0][0][2], rvec[0][0][0], rvec[0][0][1], rvec[0][0][2]]
-            return True, pose_estimate
+                # rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[i], parameters.parameters.marker_length, parameters.camera_matrix, parameters.dist_coeffs)
+                success, rvec, tvec = cv2.solvePnP(parameters.obj_points, corners[i], parameters.camera_matrix, parameters.dist_coeffs)
+                if success:
+                    pose_estimate = [*tvec.flatten(), *rvec.flatten()]
+                    return True, pose_estimate 
         
         return False, []
     
