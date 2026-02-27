@@ -34,10 +34,14 @@ def get_file_data(filename):
         velocity_list.append(row[0])
         steering_angle_list.append(row[1])
     for row in camera_sensor_signal_list:
-        x_camera_list.append(row[0])
-        y_camera_list.append(row[1])
-        z_camera_list.append(row[2])
-        yaw_camera_list.append(row[5])
+        if row is None:
+            x_camera_list.append(None)
+            y_camera_list.append(None)
+            yaw_camera_list.append(None)
+        else:
+            x_camera_list.append(row[0])
+            y_camera_list.append(row[1])
+            yaw_camera_list.append(row[2])
 
     t0 = time_list[0]
     for i in range(len(time_list)):
@@ -305,17 +309,17 @@ if False:
 
 # Try to load some camera data from a single trial
 if False:
-    filename = './data/robot_data_68_0_06_02_26_17_12_19.pkl'
+    filename = './data/robot_data_77_-20_26_02_26_21_02_22.pkl'
     time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list= get_file_data(filename)
 
     wheel_radius = 0.034 #cm
     encoder_counts_per_revolution = 152
     encoder_counts_to_distance = -2 * math.pi * wheel_radius/ encoder_counts_per_revolution
 
-    plt.plot(time_list, ((np.array(encoder_count_list))-encoder_count_list[0]) * encoder_counts_to_distance + x_list[0], 'k') 
+    plt.plot(time_list, ((np.array(encoder_count_list))-encoder_count_list[0]) * encoder_counts_to_distance + x_camera_list[0], 'k') 
     #plt.plot(time_list, steering_angle_list, 'r') 
-    plt.plot(time_list, x_list, 'g') 
-    plt.plot(time_list, y_list, 'b') 
-    plt.plot(time_list, z_list, 'c') 
+    plt.plot(time_list, x_camera_list, 'g') 
+    plt.plot(time_list, y_camera_list, 'b') 
+    plt.plot(time_list, z_camera_list, 'c') 
     plt.legend(['Encoder s','x','y','z'])
     plt.show()   

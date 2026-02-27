@@ -202,34 +202,122 @@ class CameraSensor:
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
         self.parameters = aruco.DetectorParameters()
         self.detector = aruco.ArucoDetector(self.aruco_dict, self.parameters)
-        
+
+        self.inch_to_meter = 0.0254
+
+        # Marker length for world frame
+        self.w_marker_length = (5 + 12/16) * self.inch_to_meter 
+        self.w_obj_points = self.get_obj_points(self.w_marker_length)
+
+        # Marker length for robot
+        self.r_marker_length = (3 + 13/16) * self.inch_to_meter
+        self.r_obj_points = self.get_obj_points(self.r_marker_length)
+
+        self.world_marker_ids = [0, 2, 1]
+
+    def get_obj_points(self, marker_length):
+        return np.array([[-marker_length/2, marker_length/2, 0],
+                        [marker_length/2, marker_length/2, 0],
+                        [marker_length/2, -marker_length/2, 0],
+                        [-marker_length/2, -marker_length/2, 0]], dtype=np.float32)
 
     # Get a new pose estimate from a camera image
     def get_signal(self, last_camera_signal):
-        camera_signal = last_camera_signal
+        # x_tm1, y_tm1, theta_tm1 = last_camera_signal
+        # ret, pose_estimate = self.get_pose_estimate()
+        # if ret:
+        #     x_t, y_t, theta_t = pose_estimate
+        #     # If camera signal is not very different from last signal, return the new signal. Otherwise, return the last signal to avoid noise.
+        #     if abs(x_t - x_tm1) < 0.5 and abs(y_t - y_tm1) < 0.5 and abs(theta_t - theta_tm1) < np.pi/4:    
+        #         return pose_estimate
+        #     else:
+        #         return last_camera_signal
         ret, pose_estimate = self.get_pose_estimate()
         if ret:
-            camera_signal = pose_estimate
-        
-        return camera_signal
+            return pose_estimate
+        return None
         
     # If there is a new image, calculate a pose estimate from the fiducial tag on the robot.
     def get_pose_estimate(self):
         ret, frame = self.cap.read()
         if not ret:
             return False, []
-        
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, rejectedImgPoints = self.detector.detectMarkers(gray)
+
+        frame = cv2.undistort(frame, parameters.camera_matrix, parameters.dist_coeffs)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+
+        # Detect markers
+        corners, ids, rejected = self.detector.detectMarkers(frame)
+
         if ids is not None:
-            # Estimate pose for each detected marker
+            ids = ids.flatten()
+            aruco.drawDetectedMarkers(frame, corners, ids)
+
+            # Marker ids 0, 1, 3 define world coordinates
+            world_coordinates = {}
+            world_corners = {}
             for i in range(len(ids)):
-                # rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[i], parameters.parameters.marker_length, parameters.camera_matrix, parameters.dist_coeffs)
-                success, rvec, tvec = cv2.solvePnP(parameters.obj_points, corners[i], parameters.camera_matrix, parameters.dist_coeffs)
-                if success:
-                    pose_estimate = [*tvec.flatten(), *rvec.flatten()]
-                    return True, pose_estimate 
-        
+                if ids[i] in self.world_marker_ids:
+                    # Use solvePnP with all four corners of the marker
+                    success, rvec, tvec = cv2.solvePnP(self.w_obj_points, corners[i], parameters.camera_matrix, parameters.dist_coeffs)
+                    if success:
+                        # Use the first corner of the detected marker for world coordinates
+                        # corners[i][0][0] is the first corner (x, y) in image coordinates
+                        # Project the first corner to world coordinates using the transformation
+                        # tvec is the translation vector for the marker center, but we want the first corner
+                        # Transform the first corner from object points to camera coordinates
+                        first_corner_obj = self.w_obj_points[0].reshape(1, 3)
+                        first_corner_cam, _ = cv2.projectPoints(first_corner_obj, rvec, tvec, parameters.camera_matrix, parameters.dist_coeffs)
+                        # For world coordinates, use solvePnP result and add the offset from the marker center to the first corner
+                        # But since solvePnP gives the pose for the marker, we can transform the first corner using the pose
+                        R, _ = cv2.Rodrigues(rvec)
+                        first_corner_world = R @ self.w_obj_points[0] + tvec.flatten()
+                        world_coordinates[ids[i]] = first_corner_world
+                        world_corners[ids[i]] = corners[i][0][0]
+
+            if all(marker in world_coordinates for marker in self.world_marker_ids):
+                # Define the world frame transformation using the first corners
+                origin = world_coordinates[self.world_marker_ids[0]]
+                x_axis = world_coordinates[self.world_marker_ids[1]] - origin  # 0 to 2 is x-axis
+                y_axis = world_coordinates[self.world_marker_ids[2]] - origin  # 0 to 1 is y-axis
+
+                # Orthogonalize and normalize axes
+                x_axis = x_axis / np.linalg.norm(x_axis)
+                y_axis = y_axis / np.linalg.norm(y_axis)
+
+                proj = np.dot(y_axis, x_axis) * x_axis
+                y_axis = y_axis - proj
+
+                z_axis = np.cross(x_axis, y_axis)
+                z_axis = z_axis / np.linalg.norm(z_axis)
+
+                # Construct rotation matrix
+                rotation_matrix = np.vstack([x_axis, y_axis, z_axis]).T
+                translation_vector = origin
+
+                # Create a 4x4 homogeneous transformation matrix
+                world_to_camera_transform = np.eye(4)
+                world_to_camera_transform[:3, :3] = rotation_matrix
+                world_to_camera_transform[:3, 3] = translation_vector
+
+            for i in range(len(ids)):
+                if ids[i] not in self.world_marker_ids and all(marker in world_coordinates for marker in self.world_marker_ids):
+                    success, rvec, tvec = cv2.solvePnP(self.r_obj_points, corners[i], parameters.camera_matrix, parameters.dist_coeffs)
+                    if success:
+                        # Transform rvec and tvec to world coordinates
+                        camera_to_marker_transform = np.eye(4)
+                        camera_to_marker_transform[:3, :3] = cv2.Rodrigues(rvec)[0]
+                        camera_to_marker_transform[:3, 3] = tvec.flatten()
+
+                        marker_in_world = np.dot(np.linalg.inv(world_to_camera_transform), camera_to_marker_transform)
+
+                        y_world = marker_in_world[1, 3]
+                        x_world = marker_in_world[0, 3]
+                        theta_world = np.arctan2(marker_in_world[1, 0], marker_in_world[0, 0])
+
+                        pose_estimate = np.array([x_world, y_world, theta_world])
+                        return True, pose_estimate
+
         return False, []
     
     # Close the camera stream

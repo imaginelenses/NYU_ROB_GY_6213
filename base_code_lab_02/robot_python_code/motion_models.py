@@ -66,6 +66,7 @@ class MyMotionModel:
         theta = w * delta_t
         delta_theta = theta - self.state[2] 
 
+        # Bicycle model 
         state = np.array(self.state) + np.array([
             s * math.cos(self.state[2] + delta_theta/2),
             s * math.sin(self.state[2] + delta_theta/2),

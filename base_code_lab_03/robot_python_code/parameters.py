@@ -4,7 +4,7 @@ import numpy as np
 
 # UDP parameters
 localIP = "10.0.0.10" # Put your laptop computer's IP here
-arduinoIP = "10.0.0.100" # Put your arduino's IP here
+arduinoIP = "10.0.0.98" # Put your arduino's IP here
 localPort = 4010
 arduinoPort = 4010
 bufferSize = 1024

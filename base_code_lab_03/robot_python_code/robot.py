@@ -27,7 +27,7 @@ class Robot:
         self.camera_sensor = robot_python_code.CameraSensor(parameters.camera_id)
         self.data_logger = robot_python_code.DataLogger(parameters.filename_start, parameters.data_name_list)
         self.robot_sensor_signal = robot_python_code.RobotSensorSignal([0, 0, 0])
-        self.camera_sensor_signal = [0,0,0,0,0,0]
+        self.camera_sensor_signal = [0,0,0]
         self.extended_kalman_filter = extended_kalman_filter.ExtendedKalmanFilter(x_0 = [0,0,0], Sigma_0 = parameters.I3 * 10e12, encoder_counts_0 = 0)
         
     # Create udp senders and receiver instances with the udp communication
@@ -44,7 +44,7 @@ class Robot:
 
     def update_state_estimate(self):
         u_t = np.array([self.robot_sensor_signal.encoder_counts, self.robot_sensor_signal.steering]) # robot_sensor_signal
-        z_t = np.array([self.camera_sensor_signal[0],self.camera_sensor_signal[1],self.camera_sensor_signal[5]]) # camera_sensor_signal
+        z_t = self.camera_sensor_signal # camera_sensor_signal (x, y, theta)
         delta_t = 0.1
         self.extended_kalman_filter.update(u_t, z_t, delta_t)
 
@@ -52,8 +52,13 @@ class Robot:
     def control_loop(self, cmd_speed = 0, cmd_steering_angle = 0, logging_switch_on = False):
         # Get camera signal
         self.camera_sensor_signal = self.camera_sensor.get_signal(self.camera_sensor_signal)
-        print("Camera signal: ", int(100*self.camera_sensor_signal[0]), int(100*self.camera_sensor_signal[1]), int(100*self.camera_sensor_signal[2]))
-        
+        if self.camera_sensor_signal is not None:
+            x, y, theta = self.camera_sensor_signal
+            # Print the camera signal
+            print(f"Camera signal: x = {x}, y = {y}, theta = {theta}")
+        else:
+            print("No camera signal received.")
+
         # Receive msg
         if self.msg_sender != None:
             self.robot_sensor_signal = self.msg_receiver.receive_robot_sensor_signal(self.robot_sensor_signal)
