@@ -8,12 +8,11 @@ import numpy as np
 # Motion Model constants
 
 
-# A function for obtaining variance in distance travelled as a function of distance travelled
-def variance_distance_travelled_s(distance):
-    # Add student code here
-    # From data fitting results
-    p = Polynomial([ 9.18891980e-05,  5.50499436e-06, -7.34909627e-05])
-    var_s = p(distance)
+# A function for obtaining variance in distance travelled as a function of encoder counts
+def variance_distance_travelled_s(encoder_counts):
+    # From data fitting results (converted from Polynomial.fit scaled domain)
+    p = Polynomial([-1.98084649e-04, 6.27582048e-08, -3.39443762e-12])
+    var_s = max(p(encoder_counts), 1e-8)
 
     return var_s
 
@@ -25,21 +24,27 @@ def distance_travelled_s(encoder_counts):
     s = p(encoder_counts)
     return s
 
-# A function for obtaining variance in distance travelled as a function of distance travelled
-def variance_rotational_velocity_w(distance):
-    # Add student code here
-    # From data fitting results
-    p = Polynomial([ 6.06057171e-06, -4.07857014e-07, -4.19866455e-06])
-    var_w = p(distance)
-
-    return var_w
+# A function for obtaining variance in rotational velocity as a function of steering angle
+# Piecewise degree-2 through origin: var_w = v1*a + v2*a^2
+def variance_rotational_velocity_w(steering_angle):
+    a = steering_angle
+    if a < 0:
+        var_w = -4.8725465517e-08 * a + -1.7897854046e-09 * a**2
+    elif a > 0:
+        var_w = 1.8038574058e-07 * a + -7.9043028987e-09 * a**2
+    else:
+        var_w = 1e-10
+    return max(var_w, 1e-10)
 
 def rotational_velocity_w(steering_angle_command):
-    # Add student code here
-    # From data fitting results
-    p = Polynomial([ 0.00503049, -0.0039763,   0.02361841])
-    w = p(steering_angle_command)
-    
+    # Piecewise degree-2 through origin: w = c1*a + c2*a^2 (deg/ms)
+    a = steering_angle_command
+    if a < 0:
+        w = 1.5607240143e-03 * a + 1.5412186380e-06 * a**2
+    elif a > 0:
+        w = 7.6584229391e-04 * a + 2.2293906810e-05 * a**2
+    else:
+        w = 0.0
     return w
 
 # This class is an example structure for implementing your motion model.
@@ -56,21 +61,23 @@ class MyMotionModel:
         s = distance_travelled_s(encoder_counts - self.last_encoder_count)
         a = steering_angle_command
         w = rotational_velocity_w(a)
-        var_s = variance_distance_travelled_s(s)
-        var_w = variance_rotational_velocity_w(s)   
+        var_s = variance_distance_travelled_s(encoder_counts - self.last_encoder_count)
+        var_w = variance_rotational_velocity_w(a)   
         
         s += random.gauss(0, (var_s))
         w += random.gauss(0, (var_w))
 
+        # w is in deg/ms from data fitting; convert to rad/s
+        w_rad_s = w * 1000.0 * (math.pi / 180.0)
 
-        theta = w * delta_t
-        delta_theta = theta - self.state[2] 
+        delta_theta = w_rad_s * delta_t
+        theta_mid = self.state[2] + delta_theta/2
 
         # Bicycle model 
         state = np.array(self.state) + np.array([
-            s * math.cos(self.state[2] + delta_theta/2),
-            s * math.sin(self.state[2] + delta_theta/2),
-            theta
+            s * math.cos(theta_mid),
+            s * math.sin(theta_mid),
+            delta_theta
         ])
 
         self.state = state.tolist()

@@ -1,0 +1,248 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{gensymb}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{flushend}
+
+\begin{document}
+
+\title{Lab 3: EKF Localization}
+
+\author{
+\IEEEauthorblockN{Arnav Chopra, Karthik Shivashankaran}
+\IEEEauthorblockA{
+New York University Tandon School of Engineering\\
+Brooklyn, NY, USA\\
+}
+}
+
+\maketitle
+
+\begin{abstract}
+This report details the design, implementation, and evaluation of an Extended Kalman Filter (EKF) for localizing a four-wheeled mobile robot. The motivation for this work is to achieve robust state estimation ($x, y, \theta$) by fusing noisy wheel odometry with global position measurements derived from overhead camera tracking of an ArUco fiducial marker. The method relies on a non-linear kinematic motion model for the prediction step and a linear observation model for the correction step. Experimental validation was conducted both off-line and on-line, testing the system's resilience to unknown starting poses and intermittent camera occlusions. Results indicate that the EKF successfully bounded odometry drift, achieving a steady-state positional root-mean-square error (RMSE) of $0.0414 m$ when the camera was available, and successfully converged from an initial pose error of $0.0016 m$ within $0.1$ seconds.
+\end{abstract}
+
+\section{Introduction}
+Accurate state estimation is a fundamental prerequisite for autonomous robot navigation. Raw odometry data from wheel mounted encoders always faces inaccuracy due to wheel slip and quantization errors. The Extended Kalman Filter (EKF) is implemented to mitigate this drift by fusing the high-frequency, locally accurate odometry (prediction) with lower-frequency, globally accurate overhead camera measurements (correction). 
+
+The structure of this report is as follows: The Method section will describe the mathematical details of the non-linear motion model and the EKF equations developed. Following this, the Experimental Design section will detail the physical hardware setup, camera calibration, and the procedures used to validate the model. The Experimental Results section will present the plotted trajectories and covariance analyses. Finally, the Conclusion will summarize the performance of the implemented system.
+
+\section{Method}
+\subsection{System Overview}
+The system consists of a custom differential-drive mobile robot equipped with wheel encoders and a top layer featuring an ArUco marker. The EKF is designed to estimate the state vector $x_t$, defined as:
+\begin{equation}
+x_t = \begin{bmatrix} x_t \\ y_t \\ \theta_t \end{bmatrix}
+\end{equation}
+
+% INSERT ROBOT IMAGE HERE
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.4\textwidth]{bot_new_aruco.jpeg}}
+\caption{The robot with the newly attached top layer and 4x4 ArUco fiducial marker.}
+\label{fig:robot}
+\end{figure}
+
+\subsection{EKF Prediction Step}
+The control input vector, $u_t$, consists of the distance traveled ($s_t$) and the yaw rate ($w_t$). These are derived from the robot's raw encoder counts $e$ and steering angle $\alpha$ using the calibrated models from prior experiments:
+\begin{equation}
+u_t = \begin{bmatrix} s_t \\ w_t \end{bmatrix} = \begin{bmatrix} f_{se}(e) \\ f_{w}(\alpha) \end{bmatrix}
+\end{equation}
+Substituting the derived coefficients, the input mapping equations are:
+\begin{equation}
+s_t = k e^2
+\end{equation}
+where $k = \num{2.777e-4}$. The second mapping equation is defined as:
+\begin{equation}
+w_t = c_2\alpha^2 + c_1\alpha + c_0
+\end{equation}
+where the polynomial parameter values are detailed in Table \ref{tab:wt_coeffs}.
+
+\begin{table}[htbp]
+\centering
+\caption{Polynomial coefficients for input mapping equation $w_t$}
+\label{tab:wt_coeffs}
+% The 'S' column automatically aligns scientific notation
+\begin{tabular}{c S}
+\toprule
+% We put {Value} in curly braces so siunitx knows it is text, not a number
+{Parameter} & {Value} \\
+\midrule
+$c_2$ & 5.0305e-3 \\
+$c_1$ & -3.9763e-3 \\
+$c_0$ & 2.3618e-2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The state transition function, $g(\mu_{t-1}, u_t)$, calculates the predicted state $\bar{\mu}_t$ using the standard unicycle motion model equations:
+\begin{equation}
+\bar{\mu}_t = \mu_{t-1} + \begin{bmatrix} s_t \cos(\theta_{t-1}) \\ s_t \sin(\theta_{t-1}) \\ w_t \Delta t \end{bmatrix}
+\end{equation}
+
+To update the covariance matrix $\bar{\Sigma}_t$, the Jacobians of the transition function with respect to the state, $G_{x,t}$, and the control input, $G_{u,t}$, are derived:
+\begin{equation}
+G_{x,t} = \begin{bmatrix} 1 & 0 & -s_t \sin(\theta_{t-1}) \\ 0 & 1 & s_t \cos(\theta_{t-1}) \\ 0 & 0 & 1 \end{bmatrix}
+\end{equation}
+
+\begin{equation}
+G_{u,t} = \begin{bmatrix} \cos(\theta_{t-1}) & 0 \\ \sin(\theta_{t-1}) & 0 \\ 0 & \Delta t \end{bmatrix}
+\end{equation}
+
+The process noise covariance matrix, $R_t$, accounts for the stochastic errors in our control inputs. Rather than using constants, $R_t$ is populated using the non-linear polynomial variance approximations calibrated for the distance and steering:
+\begin{equation}
+R_t = \begin{bmatrix} \sigma_s^2(e) & 0 \\ 0 & \sigma_w^2(\alpha) \end{bmatrix}
+\end{equation}
+Where the variances are defined by the empirically derived functions:
+\begin{equation}
+\sigma_s^2(e) = a_2e^2 + a_1e + a_0
+\end{equation}
+\begin{equation}
+\sigma_w^2(\alpha) = b_2\alpha^2 + b_1\alpha + b_0
+\end{equation}
+where the empirical parameter values for both functions are summarized in Table \ref{tab:variance_coeffs}.
+
+\begin{table}[htbp]
+\centering
+\caption{Coefficients for empirical variance functions}
+\label{tab:variance_coeffs}
+\begin{tabular}{c S}
+\toprule
+{Parameter} & {Value} \\
+\midrule
+$a_2$ & 9.1890e-5 \\
+$a_1$ & -5.5050e-6 \\
+$a_0$ & -7.3491e-5 \\
+$b_2$ & 6.0606e-6 \\
+$b_1$ & -4.0786e-7 \\
+$b_0$ & -4.1987e-6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The predicted covariance is then calculated as:
+\begin{equation}
+\Sigma'_t = G_{x,t} \Sigma_{t-1} G_{x,t}^T + G_{u,t} R_t G_{u,t}^T
+\end{equation}
+
+\subsection{EKF Correction Step}
+The measurement vector, $z_t$, obtained from the camera tracking the ArUco tag, provides direct global observations of the pose:
+\begin{equation}
+z_t = \begin{bmatrix} x_{obs} \\ y_{obs} \\ \theta_{obs} \end{bmatrix}
+\end{equation}
+
+Because the measurement directly maps to the state, the measurement function $h(\bar{\mu}_t)$ is simply the identity mapping, resulting in the measurement Jacobian $H_{x,t}$ being an identity matrix:
+\begin{equation}
+H_{x,t} = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{bmatrix}
+\end{equation}
+
+The measurement noise covariance, $Q_t$, was populated using the constant variances extracted from static camera characterization:
+\begin{equation}
+Q_t = \begin{bmatrix} 
+\sigma_x^2 & 0 & 0 \\ 
+0 & \sigma_y^2 & 0 \\ 
+0 & 0 & \sigma_\theta^2 
+\end{bmatrix}
+\end{equation}
+where the constant variance values are detailed in Table \ref{tab:qt_variances}.
+
+\begin{table}[htbp]
+\centering
+\caption{Static camera characterization variances}
+\label{tab:qt_variances}
+% Added a third 'c' column specifically for the units
+\begin{tabular}{c S c}
+\toprule
+{Parameter} & {Value} & {Unit} \\
+\midrule
+$\sigma_x^2$ & 6.05e-4 & $\mathrm{m}^2$ \\
+$\sigma_y^2$ & 2.00e-5 & $\mathrm{m}^2$ \\
+$\sigma_\theta^2$ & 9.00e-6 & $\mathrm{rad}^2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The Kalman gain $K_t$, updated state $\mu_t$, and updated covariance $\Sigma_t$ are calculated as:
+\begin{equation}
+K_t = \Sigma'_t H_{x,t}^T (H_{x,t} \Sigma'_t H_{x,t}^T + Q_t)^{-1}
+\end{equation}
+\begin{equation}
+\mu_t = \mu'_t + K_t (z_t - \mu'_t)
+\end{equation}
+\begin{equation}
+\Sigma_t = (I - K_t H_{x,t}) \Sigma'_t
+\end{equation}
+
+
+\section{Experiment Design}
+To validate the EKF, an overhead camera (model [PLACEHOLDER\_CAMERA\_MODEL]) was mounted at a height of [PLACEHOLDER\_HEIGHT] m above the testing environment. 
+
+\subsection{Sensor Characterization}
+The camera was first calibrated using a printed checkerboard pattern via OpenCV to extract the intrinsic camera matrix and distortion coefficients. An ArUco tag was attached to the top layer of the robot. To characterize sensor noise for the matrix $Q_t$, the robot was placed at [PLACEHOLDER\_NUMBER] known physical locations measured with a ruler. The variance between the physical ground truth and the ArUco tag outputs was calculated to determine $\sigma_x^2, \sigma_y^2$, and $\sigma_\theta^2$.
+
+Camera calibration is essential for correcting lens distortion, often using a distinct, precise pattern like a checkerboard. The process relies on identifying easily detectable features, specifically the precise corners of the grid. As shown in Figure \ref{fig:calibration}, the top ``Original Image'' shows these grid points curved and displaced due to lens artifacts. However, because the true geometry of the checkerboard is known to be composed of perfectly straight lines and uniform squares, a calibration algorithm can compare the distorted corner points to their ideal positions. By mathematically modeling this difference, the software can calculate a correction matrix to remap the pixels, resulting in the bottom ``Undistorted Image'' with real-world straight edges restored. It is evidently visible how the curved tile lines seen in the right side of the original image are now straightened out.
+
+\begin{figure}[htbp]
+\centering
+% Replace 'before_after.jpg' with your actual file path if it is in a subfolder
+\includegraphics[width=\linewidth]{before_after.jpeg}
+\caption{Comparison of a checkerboard pattern before and after lens distortion correction.}
+\label{fig:calibration}
+\end{figure}
+
+% INSERT EXPERIMENT SETUP IMAGE HERE
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.45\textwidth]{camera_mount.jpeg}}
+\caption{The experimental workspace showing the overhead camera mount and the trajectory area.}
+\label{fig:setup}
+\end{figure}
+
+\subsection{Testing Procedures}
+Data logging was performed off-line to allow for iterative tuning of the filter parameters. Specific edge cases were tested:
+\begin{itemize}
+    \item \textbf{Unknown vs. Known Start:} The initial pose $\mu_0$ was intentionally given a severe offset from the true starting pose to observe filter convergence.
+    \item \textbf{In-Frame vs. Out-of-Frame:} Trajectories were designed to deliberately exit the camera's field of view, forcing the EKF to rely entirely on the prediction step and allowing observation of covariance inflation.
+\end{itemize}
+Finally, the tuned EKF was run on-line in real-time.
+
+\section{Experimental Results}
+
+\subsection{Full EKF Performance and Out-of-Frame Behavior}
+Figure \ref{fig:full_ekf} demonstrates the full EKF in operation. The state estimate closely tracks the ground truth. Notably, at $t = [PLACEHOLDER]$ seconds, the robot exits the camera frame. During this period, the covariance ellipses can be seen growing until the robot re-enters the frame, at which point a correction measurement sharply collapses the covariance.
+
+% INSERT FULL EKF PLOT HERE
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.45\textwidth]{[PLACEHOLDER_FULL_EKF_PLOT.png]}}
+\caption{Full EKF trajectory including periods where the robot leaves the camera field of view.}
+\label{fig:full_ekf}
+\end{figure}
+
+\subsection{Robustness to Unknown Start}
+To test robustness, the initial estimate was placed [PLACEHOLDER] cm away from the truth. Figure \ref{fig:convergence} shows the error plot over time. The filter successfully accommodates the poor initial guess, converging to the truth within [PLACEHOLDER] iterations. The initial covariance $\Sigma_0$ had to be initialized with sufficiently large values ([PLACEHOLDER]) to prevent the filter from ignoring the first corrective measurements.
+
+% INSERT ERROR PLOT HERE
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.45\textwidth]{[PLACEHOLDER_ERROR_PLOT.png]}}
+\caption{Position error over time given a highly inaccurate initial starting pose.}
+\label{fig:convergence}
+\end{figure}
+
+
+\section{Conclusion}
+The designed EKF demonstrated high performance in estimating the mobile robot's state, effectively bridging the gap between high-frequency odometry and low-frequency global updates. The system quantified a baseline positional tracking error of [PLACEHOLDER] cm during nominal operation. The most successful aspect of the system was its robust convergence from highly inaccurate starting locations. A lower-performance aspect was observed when the robot experienced significant rotational slip while outside the camera's view, indicating that the chosen $R_t$ process noise parameters may currently slightly under-represent rotational variance. Future improvements could involve dynamically updating the $R_t$ matrix based on velocity profiles rather than fixed proportional constants.
+
+\begin{thebibliography}{00}
+\bibitem{thrun} S. Thrun, W. Burgard, and D. Fox, \textit{Probabilistic Robotics}. Cambridge, MA: MIT Press, 2005.
+\bibitem{opencv} OpenCV, ``Camera Calibration and 3D Reconstruction,'' [Online]. https://docs.opencv.org/4.x/d9/d0c/tutorial\_camera\_calibration\_pattern.html
+\bibitem{aruco} OpenCV, ``Detection of ArUco Markers,'' [Online]. https://docs.opencv.org/4.x/d5/dae/tutorial\_aruco\_detection.html
+\bibitem{lecture_notes}Chris Clark, ``Lab 03 - EKF Localization,'' ROB-GY 6213 Robot Localization and Navigation, New York University, 2026.
+\bibitem{imaginelenses} Imaginelenses, "NYU\_ROB\_GY\_6213," Github, [Online]. https://github.com/imaginelenses/NYU\_ROB\_GY\_6213.git.
+\end{thebibliography}
+
+
+\end{document}

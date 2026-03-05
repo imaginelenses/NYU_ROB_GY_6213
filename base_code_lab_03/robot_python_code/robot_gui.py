@@ -183,8 +183,12 @@ def main():
             covar_matrix = parameters.covariance_plot_scale * robot.extended_kalman_filter.state_covariance[0:2,0:2]#np.array([[sigma, -sigma*0.9],[ -sigma*0.9, sigma]])
             x_est = robot.extended_kalman_filter.state_mean[0]
             y_est = robot.extended_kalman_filter.state_mean[1]
-            lambda_, v = np.linalg.eig(covar_matrix)
-            lambda_ = np.sqrt(lambda_)
+
+            # lambda_, v = np.linalg.eig(covar_matrix)
+            # lambda_ = np.sqrt(lambda_)
+            lambda_, v = np.linalg.eigh(covar_matrix)
+            lambda_ = np.sqrt(np.maximum(lambda_, 0))
+
             ell = Ellipse(xy=(x_est, y_est), alpha=0.5, facecolor='red',width=lambda_[0], height=lambda_[1], angle=np.rad2deg(np.arctan2(*v[:,0][::-1])))
             ax = fig.gca()
             ax.add_artist(ell)

@@ -9,6 +9,7 @@ from numpy.polynomial import Polynomial
 # Local libraries
 import parameters
 import data_handling
+import motion_models
 
 # Main class
 class ExtendedKalmanFilter:
@@ -21,47 +22,42 @@ class ExtendedKalmanFilter:
 
     # Call the prediction and correction steps
     def update(self, u_t, z_t, delta_t):
+        # Check stationarity BEFORE prediction_step updates last_encoder_counts
+        encoder_change = abs(u_t[0] - self.last_encoder_counts)
+
+        if encoder_change < 1:
+            # Robot stationary, keep current state unchanged (no rotation when not moving)
+            self.last_encoder_counts = u_t[0]
+            return
+
         self.prediction_step(u_t, delta_t)
 
-        if np.linalg.norm(u_t[0] - self.last_encoder_counts) < 1:
-            # Robot stationary, skip update
+        if z_t is not None:
+            self.correction_step(z_t)
+        else:
+            # Moving but no measurement available, use prediction only
             self.state_mean = self.predicted_state_mean
             self.state_covariance = self.predicted_state_covariance
-        elif z_t is not None:
-            self.correction_step(z_t)
         return
     
     # Set the EKF's corrected state mean and covariance matrix
-    # def correction_step(self, z_t):
-    #     H_t = self.get_H()
-    #     Q_t = self.get_Q()
-
-    #     y_t = z_t - self.get_h_function(self.predicted_state_mean)
-
-
-    #     S_t = H_t @ self.predicted_state_covariance @ H_t.T + Q_t
-    #     K_t = self.predicted_state_covariance @ H_t.T @ np.linalg.inv(S_t)
-
-    #     self.state_mean = self.predicted_state_mean + K_t @ y_t
-    #     self.state_covariance = (parameters.I3 - K_t @ H_t) @ self.predicted_state_covariance
-
-    #     return
-    
     def correction_step(self, z_t):
         H_t = self.get_H()
         Q_t = self.get_Q()
 
         z_pred = self.get_h_function(self.predicted_state_mean)
         y_t = z_t - z_pred
+        # Wrap theta residual to [-pi, pi] (camera uses arctan2, model accumulates continuously)
+        y_t[2] = (y_t[2] + math.pi) % (2 * math.pi) - math.pi
         S_t = H_t @ self.predicted_state_covariance @ H_t.T + Q_t
 
-        # Mahalanobis distance
-        d_squared = y_t.T @ np.linalg.inv(S_t) @ y_t
-        if d_squared > 9.21:  # chi-square 95% threshold for 3 DOF
-            # Reject outlier measurement
-            self.state_mean = self.predicted_state_mean
-            self.state_covariance = self.predicted_state_covariance
-            return
+        # # Mahalanobis distance
+        # d_squared = y_t.T @ np.linalg.inv(S_t) @ y_t
+        # if d_squared > 11.345:  # chi-square 99% threshold for 3 DOF
+        #     # Reject outlier measurement
+        #     self.state_mean = self.predicted_state_mean
+        #     self.state_covariance = self.predicted_state_covariance
+        #     return
 
         K_t = self.predicted_state_covariance @ H_t.T @ np.linalg.inv(S_t)
 
@@ -70,65 +66,41 @@ class ExtendedKalmanFilter:
 
     # Set the EKF's predicted state mean and covariance matrix
     def prediction_step(self, u_t, delta_t):
+        encoder_counts, steering_angle = u_t
+        encoder_change = encoder_counts - self.last_encoder_counts
+
         x_t, s = self.g_function(self.state_mean, u_t, delta_t)
         G_x = self.get_G_x(self.state_mean, u_t, delta_t)
         G_u = self.get_G_u(self.state_mean, u_t, delta_t)
-        R_t = self.get_R(s)
+        R_t = self.get_R(encoder_change, steering_angle, delta_t)
 
         self.predicted_state_mean = x_t
         self.predicted_state_covariance = G_x @ self.state_covariance @ G_x.T + G_u @ R_t @ G_u.T
+
+        # Update encoder counts AFTER all computations that depend on the difference
+        self.last_encoder_counts = u_t[0]
         return
-
-    # A function for obtaining variance in distance travelled as a function of distance travelled
-    def variance_distance_travelled_s(self, distance):
-        # From data fitting results
-        p = Polynomial([ 9.18891980e-05,  5.50499436e-06, -7.34909627e-05])
-        var_s = p(distance)
-
-        return var_s
-
-    # Function to calculate distance from encoder counts
-    def distance_travelled_s(self, encoder_counts):
-        # From data fitting results
-        p = Polynomial([ 0.00000000e+00,  2.77722956e-04, -2.88552063e-11])
-        s = p(encoder_counts)
-        return s
-
-    # A function for obtaining variance in distance travelled as a function of distance travelled
-    def variance_rotational_velocity_w(self, distance):
-        # From data fitting results
-        p = Polynomial([ 6.06057171e-06, -4.07857014e-07, -4.19866455e-06])
-        var_w = p(distance)
-
-        return var_w
-
-    def rotational_velocity_w(self, steering_angle_command):
-        # From data fitting results
-        p = Polynomial([ 0.00503049, -0.0039763,   0.02361841])
-        w = p(steering_angle_command)
-        
-        return w
 
     # The nonlinear transition equation that provides new states from past states
     # Motion model - Bicycle model
     def g_function(self, x_tm1, u_t, delta_t):
         encoder_counts, steering_angle = u_t
-        s = self.distance_travelled_s(encoder_counts - self.last_encoder_counts)
-        self.last_encoder_counts = encoder_counts 
-        w = self.rotational_velocity_w(steering_angle)
+        s = motion_models.distance_travelled_s(encoder_counts - self.last_encoder_counts)
+        w = motion_models.rotational_velocity_w(steering_angle)
 
-        theta_t = w * delta_t
+        # w is in deg/ms from data fitting; convert to rad/s
+        # Negate: camera world frame has opposite rotation handedness from compass convention
+        w_rad_s = -w * 1000.0 * (math.pi / 180.0)
+
+        delta_theta = w_rad_s * delta_t
         theta_tm1 = x_tm1[2]
-
-        delta_theta = theta_t - theta_tm1
-
-        theta_mid = theta_tm1 + delta_theta/2
+        theta_mid = theta_tm1 + delta_theta / 2
 
         # Bicycle model 
         x_t = np.array(x_tm1) + np.array([
             s * math.cos(theta_mid),
             s * math.sin(theta_mid),
-            theta_t
+            delta_theta
         ])
 
         return x_t, s
@@ -178,23 +150,31 @@ class ExtendedKalmanFilter:
         return parameters.I3
     
     # This function returns the R_t matrix which contains transition function covariance terms.
-    def get_R(self, s):
+    def get_R(self, encoder_change, steering_angle, delta_t=0.1):
+        var_s = motion_models.variance_distance_travelled_s(encoder_change)
+        # Polynomial fitted for total-trial encoder counts [4417..13723];
+        # per-step changes (~100) are outside valid domain → negative → clamped to 1e-8.
+        # Use a physically meaningful floor: σ_s ≈ 1cm → var_s = 1e-4 m²
+        var_s = max(var_s, 1e-4)
+
+        # var_w is in (deg/ms)²; G_u expects var(delta_theta) in rad²
+        # delta_theta = w * (1000 * π/180) * dt, so var_delta_theta = var_w * (1000*π/180)² * dt²
+        var_w_deg_ms = motion_models.variance_rotational_velocity_w(steering_angle)
+        var_delta_theta = var_w_deg_ms * (1000.0 * math.pi / 180.0) ** 2 * delta_t ** 2
+        # Floor: σ_δθ ≈ 1° ≈ 0.017 rad → var = 3e-4 rad²
+        var_delta_theta = max(var_delta_theta, 3e-4)
         R_t = np.array([
-            [self.variance_distance_travelled_s(s), 0],
-            [0, self.variance_rotational_velocity_w(s)]
+            [var_s, 0],
+            [0, var_delta_theta]
         ])
         return R_t
 
     # This function returns the Q_t matrix which contains measurement covariance terms.
     def get_Q(self):
-        # From experimentation
-
-        # Q_t = np.array([[1.31469634e-06, 1.07275353e-07, 1.08102805e-03],
-        #                 [1.07275353e-07, 2.82102429e-07, 5.17560645e-04],
-        #                 [1.08102805e-03, 5.17560645e-04, 5.43162098e-00]])
-
-        Q_t = np.diag([0.01, 0.01, 0.001])
-        
+        # From ground truth experiment (camera_tracking.ipynb) in SI units (meters, radians)
+        Q_t = np.array([[ 0.00169442,  0.00043347, -0.00131223],
+                        [ 0.00043347,  0.00165269, -0.0010776 ],
+                        [-0.00131223, -0.0010776 ,  0.0034934 ]])
         return Q_t
 
 class KalmanFilterPlot:
@@ -230,7 +210,7 @@ class KalmanFilterPlot:
         plt.ylabel('Y(m)')
         
         # plt.axis([-0.25, 2, -1, 1])
-        plt.axis([-0.25, 2, -0.25, 2])
+        plt.axis([-1, 3, -1, 1.5])
 
         plt.grid()
         plt.draw()
@@ -241,12 +221,13 @@ class KalmanFilterPlot:
 def offline_efk():
 
     # Get data to filter
-    # filename = './data/robot_data_75_0_26_02_26_21_06_49.pkl'
-    # filename = './data/robot_data_77_-20_26_02_26_21_02_22.pkl'
-    filename = './data/robot_data_0_0_26_02_26_22_16_02.pkl'
+    # filename = './data/robot_data_0_-20_26_02_26_23_40_54.pkl'
+    # filename = './data/robot_data_0_0_27_02_26_17_57_17.pkl'
+    filename = './data/robot_data_0_0_27_02_26_18_30_11.pkl'
+
     ekf_data = data_handling.get_file_data_for_kf(filename)
 
-    x_0 = ekf_data[0][3]
+    x_0 = [0, 0, 0]
     Sigma_0 = parameters.I3
     encoder_counts_0 = ekf_data[0][2].encoder_counts
     extended_kalman_filter = ExtendedKalmanFilter(x_0, Sigma_0, encoder_counts_0)

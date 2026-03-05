@@ -277,9 +277,9 @@ class CameraSensor:
 
             if all(marker in world_coordinates for marker in self.world_marker_ids):
                 # Define the world frame transformation using the first corners
-                origin = world_coordinates[self.world_marker_ids[0]]
-                x_axis = world_coordinates[self.world_marker_ids[1]] - origin  # 0 to 2 is x-axis
-                y_axis = world_coordinates[self.world_marker_ids[2]] - origin  # 0 to 1 is y-axis
+                origin = world_coordinates[0]
+                x_axis = world_coordinates[2] - origin  # 0 to 2 is x-axis
+                y_axis = world_coordinates[1] - origin  # 0 to 1 is y-axis
 
                 # Orthogonalize and normalize axes
                 x_axis = x_axis / np.linalg.norm(x_axis)
@@ -288,6 +288,7 @@ class CameraSensor:
                 proj = np.dot(y_axis, x_axis) * x_axis
                 y_axis = y_axis - proj
 
+                y_axis = y_axis / np.linalg.norm(y_axis)
                 z_axis = np.cross(x_axis, y_axis)
                 z_axis = z_axis / np.linalg.norm(z_axis)
 
@@ -311,8 +312,8 @@ class CameraSensor:
 
                         marker_in_world = np.dot(np.linalg.inv(world_to_camera_transform), camera_to_marker_transform)
 
-                        y_world = marker_in_world[1, 3]
                         x_world = marker_in_world[0, 3]
+                        y_world = marker_in_world[1, 3]
                         theta_world = np.arctan2(marker_in_world[1, 0], marker_in_world[0, 0])
 
                         pose_estimate = np.array([x_world, y_world, theta_world])

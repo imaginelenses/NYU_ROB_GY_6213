@@ -26,7 +26,6 @@ def get_file_data(filename):
     steering_angle_list = []
     x_camera_list = []
     y_camera_list = []
-    z_camera_list = []
     yaw_camera_list = []
     for row in robot_sensor_signal_list:
         encoder_count_list.append(row.encoder_counts)
@@ -47,7 +46,7 @@ def get_file_data(filename):
     for i in range(len(time_list)):
         time_list[i] = time_list[i] - t0
     
-    return time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list
+    return time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, yaw_camera_list
 
 
 # Open a file and return data in a form ready to plot
@@ -73,7 +72,7 @@ def get_file_data_for_kf(filename):
 
 # For a given trial, plot the encoder counts, velocities, steering angles
 def plot_trial_basics(filename):
-    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list = get_file_data(filename)
+    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, yaw_camera_list = get_file_data(filename)
     
     plt.plot(time_list, encoder_count_list)
     plt.title('Encoder Values')
@@ -88,7 +87,7 @@ def plot_trial_basics(filename):
 
 # Plot a trajectory using the motion model, input data ste from a single trial.
 def run_my_model_on_trial(filename, show_plot = True, plot_color = 'ko'):
-    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list = get_file_data(filename)
+    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, yaw_camera_list = get_file_data(filename)
     
     motion_model = motion_models.MyMotionModel([0,0,0], 0)
     x_list, y_list, theta_list = motion_model.traj_propagation(time_list, encoder_count_list, steering_angle_list)
@@ -114,7 +113,7 @@ def plot_many_trial_predictions(directory):
 
 # Calculate the predicted distance from single trial for a motion model
 def run_my_model_to_predict_distance(filename):
-    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list = get_file_data(filename)
+    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, yaw_camera_list = get_file_data(filename)
     motion_model = motion_models.MyMotionModel([0,0,0], 0)
     x_list, _, _ = motion_model.traj_propagation(time_list, encoder_count_list, steering_angle_list)
     distance = x_list[-30]
@@ -123,7 +122,7 @@ def run_my_model_to_predict_distance(filename):
 
 # Calculate the predicted distance from single trial for a motion model
 def run_my_model_to_predict_state(filename):
-    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list = get_file_data(filename)
+    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, yaw_camera_list = get_file_data(filename)
     motion_model = motion_models.MyMotionModel([0,0,0], 0)
     x_list, y_list, theta_list, distance_list = motion_model.traj_propagation(time_list, encoder_count_list, steering_angle_list)
     
@@ -284,42 +283,44 @@ files_and_data_curve = [
     ['robot_data_60_10_28_01_26_13_53_08.pkl', 76/100, 71/100],
 ]
 
-# Plot the motion model predictions for a single trial
-if False:
-    filename = './data_straight/robot_data_60_0_28_01_26_13_36_10.pkl'
-    run_my_model_on_trial(filename)
+if __name__ == "__main__":
 
-# Plot the motion model predictions for each trial in a folder
-if False:
-    directory = ('./data_straight/')
-    plot_many_trial_predictions(directory)
+    # Plot the motion model predictions for a single trial
+    if False:
+        filename = './data_straight/robot_data_60_0_28_01_26_13_36_10.pkl'
+        run_my_model_on_trial(filename)
 
-# A list of files to open, process, and plot - for comparing predicted with actual distances
-if False:
-    directory = ('./data_straight/')    
-    process_files_and_plot(files_and_data, directory)
+    # Plot the motion model predictions for each trial in a folder
+    if False:
+        directory = ('./data/')
+        plot_many_trial_predictions(directory)
 
-if False:
-    directory = ('./data_curve/')    
-    process_files_and_plot_curve(files_and_data_curve, directory)
+    # A list of files to open, process, and plot - for comparing predicted with actual distances
+    if False:
+        directory = ('./data_straight/')    
+        process_files_and_plot(files_and_data, directory)
 
-# Try to sample with the motion model
-if False:
-    sample_model(200)
+    if False:
+        directory = ('./data_curve/')    
+        process_files_and_plot_curve(files_and_data_curve, directory)
 
-# Try to load some camera data from a single trial
-if False:
-    filename = './data/robot_data_77_-20_26_02_26_21_02_22.pkl'
-    time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, z_camera_list, yaw_camera_list= get_file_data(filename)
+    # Try to sample with the motion model
+    if False:
+        sample_model(200)
 
-    wheel_radius = 0.034 #cm
-    encoder_counts_per_revolution = 152
-    encoder_counts_to_distance = -2 * math.pi * wheel_radius/ encoder_counts_per_revolution
+    # Try to load some camera data from a single trial
+    if False:
+        filename = './data/robot_data_0_-20_26_02_26_23_40_54.pkl'
+        time_list, encoder_count_list, velocity_list, steering_angle_list, x_camera_list, y_camera_list, yaw_camera_list = get_file_data(filename)
 
-    plt.plot(time_list, ((np.array(encoder_count_list))-encoder_count_list[0]) * encoder_counts_to_distance + x_camera_list[0], 'k') 
-    #plt.plot(time_list, steering_angle_list, 'r') 
-    plt.plot(time_list, x_camera_list, 'g') 
-    plt.plot(time_list, y_camera_list, 'b') 
-    plt.plot(time_list, z_camera_list, 'c') 
-    plt.legend(['Encoder s','x','y','z'])
-    plt.show()   
+        wheel_radius = 0.034 #cm
+        encoder_counts_per_revolution = 152
+        encoder_counts_to_distance = -2 * math.pi * wheel_radius/ encoder_counts_per_revolution
+
+        plt.plot(time_list, ((np.array(encoder_count_list))-encoder_count_list[0]) * encoder_counts_to_distance + x_camera_list[0], 'k') 
+        #plt.plot(time_list, steering_angle_list, 'r') 
+        plt.plot(time_list, x_camera_list, 'g') 
+        plt.plot(time_list, y_camera_list, 'b') 
+        plt.plot(time_list, yaw_camera_list, 'c') 
+        plt.legend(['Encoder s','x','y','yaw'])
+        plt.show()   

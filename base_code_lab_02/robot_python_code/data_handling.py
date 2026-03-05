@@ -175,14 +175,14 @@ files_and_data = [
 # Plot the motion model predictions for a single trial
 if False:
     # filename = './data_straight/robot_data_60_0_28_01_26_13_36_10.pkl'
-    filename = './data_steer/robot_data_70_10_11_02_26_20_25_15.pkl'
+    filename = './data_steer_final/robot_data_70_20_12_02_26_20_22_41.pkl'
     run_my_model_on_trial(filename)
 
 # Plot the motion model predictions for each trial in a folder
 if True:
     directory = ('./steer/') # Subset of steer_final due to limited colors
     plot_many_trial_predictions(directory)
-    directory = ('./data/')
+    directory = ('./data_straight_final/')
     plot_many_trial_predictions(directory)
 
 # A list of files to open, process, and plot - for comparing predicted with actual distances
