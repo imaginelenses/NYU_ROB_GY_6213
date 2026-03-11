@@ -198,7 +198,7 @@ class CameraSensor:
     # Constructor
     def __init__(self, camera_id):
         self.camera_id = camera_id
-        self.cap = cv2.VideoCapture(camera_id)
+        self.cap = None  # Don't open camera here
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_6X6_250)
         self.parameters = aruco.DetectorParameters()
         self.detector = aruco.ArucoDetector(self.aruco_dict, self.parameters)
@@ -214,6 +214,8 @@ class CameraSensor:
         
     # If there is a new image, calculate a pose estimate from the fiducial tag on the robot.
     def get_pose_estimate(self):
+        if self.cap is None or not self.cap.isOpened():
+            self.cap = cv2.VideoCapture(self.camera_id)
         ret, frame = self.cap.read()
         if not ret:
             return False, []

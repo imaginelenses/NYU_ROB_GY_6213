@@ -11,6 +11,7 @@ unsigned int remotePort = 4010;    // local port to listen on - no need to chang
 int status = WL_IDLE_STATUS;
 int last_time_rx = 0;
 int last_time_tx = 0;
+bool streaming = false;
 WiFiUDP Udp;
 char packetBuffer[256];            //buffer to hold incoming packet
 
@@ -152,16 +153,51 @@ void setup()
 // Main loop to be run sequentially 
 void loop() 
 {
-  // Receive control signal messages
-  ControlSignal control_signal = receive_control_signals(last_control_signal);
-  last_control_signal = control_signal;
-  
-  // Send control signals to robot hardware actuators
-  control_robot(control_signal);
+  // Check for start/stop command from laptop
+  int packetSize = Udp.parsePacket();
+  if (packetSize) {
+    int len = Udp.read(packetBuffer, 255);
+    if (len > 0) packetBuffer[len] = 0;
+    if (strncmp(packetBuffer, "start", 5) == 0) {
+      streaming = true;
+      reset_lidar_message();
+      Serial.println("Streaming started");
+    } else if (strncmp(packetBuffer, "stop", 4) == 0) {
+      streaming = false;
+      Serial.println("Streaming stopped");
+    }
+  }
 
-  // Send sensor data in messages to laptop
-  SensorSignal sensor_signal = get_sensor_signal(control_signal.steering_angle);
-  send_sensor_signal(sensor_signal);
+  // Always drain lidar to prevent buffer overflow
+  if (IS_OK(lidar.waitPoint())) {
+    if (streaming) {
+      float distance = lidar.getCurrentPoint().distance;
+      if (distance > 100 && current_num_lidar_rays < NumLidarRaysPerMsg) {
+        int angle = int(lidar.getCurrentPoint().angle);
+        current_num_lidar_rays += 1;
+        current_lidar_scan_data += "," + String(angle) + "," + String(int(distance));
+      }
+      // Send batch when full
+      if (current_num_lidar_rays >= NumLidarRaysPerMsg) {
+        String msg = String(current_num_lidar_rays) + current_lidar_scan_data;
+        Udp.beginPacket(remoteIP, remotePort);
+        int array_length = msg.length() + 1;
+        char msg_as_char_array[array_length];
+        msg.toCharArray(msg_as_char_array, array_length);
+        Udp.write(msg_as_char_array);
+        Udp.endPacket();
+        reset_lidar_message();
+      }
+    }
+  } else {
+    analogWrite(RPLidarMotorPin, 255);
+    rplidar_response_device_info_t info;
+    if (IS_OK(lidar.getDeviceInfo(info, 100))) {
+      lidar.startScan();
+      analogWrite(RPLidarMotorPin, 255);
+      delay(1000);
+    }
+  }
 }
 
 // After sending lidar data to the laptop, reset the count and message.

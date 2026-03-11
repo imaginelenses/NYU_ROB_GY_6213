@@ -3,19 +3,48 @@ import math
 import numpy as np
 
 # UDP parameters
-localIP = "192.168.0.199" # Put your laptop computer's IP here 199
-arduinoIP = "192.168.0.200" # Put your arduino's IP here 200
+localIP = "10.0.0.10" # Put your laptop computer's IP here
+arduinoIP = "10.0.0.97" # Put your arduino's IP here
 localPort = 4010
 arduinoPort = 4010
 bufferSize = 1024
 
 # Camera parameters
 camera_id = 0
-marker_length = 0.071
-camera_matrix = np.array([[1.41089024e+03, 0.00000000e+00 ,5.34757040e+02],
- [0.00000000e+00 ,1.40977771e+03, 4.63300611e+02],
- [0.00000000e+00 ,0.00000000e+00 ,1.00000000e+00]], dtype=np.float32)
-dist_coeffs = np.array([-0.32511173, -0.09273864 ,-0.00295959 , 0.00111094 , 0.2446519 ], dtype=np.float32)
+inches_to_meters = 0.0254
+marker_length = 7 * inches_to_meters 
+obj_points = np.array([
+            [-marker_length/2,  marker_length/2, 0],
+            [ marker_length/2,  marker_length/2, 0],
+            [ marker_length/2, -marker_length/2, 0],
+            [-marker_length/2, -marker_length/2, 0]], dtype=np.float32)
+camera_matrix = np.array([
+        [
+            1563.0532919672587,
+            0.0,
+            915.0889020362948
+        ],
+        [
+            0.0,
+            1560.5743446217068,
+            563.6030469655277
+        ],
+        [
+            0.0,
+            0.0,
+            1.0
+        ]
+    ], dtype=np.float32)
+
+dist_coeffs = np.array(
+  [
+    -0.36492240253000724,
+    0.03329766076723505,
+    0.0009421722713071375,
+    -2.9692152435985755e-06,
+    0.08458318777758032
+  ], dtype=np.float32)
+
 
 # Robot parameters
 num_robot_sensors = 2 # encoder, steering

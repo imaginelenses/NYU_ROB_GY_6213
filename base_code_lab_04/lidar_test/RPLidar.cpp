@@ -45,14 +45,14 @@ RPLidar::~RPLidar()
 }
 
 // open the given serial interface and try to connect to the RPLIDAR
-// Return type is void: begin() cannot fail and advertising bool caused callers to
-// read garbage from r0 (undefined behaviour), locking up on ARM Cortex-M.
-// NOTE (Giga R1 / Mbed OS): Do NOT call begin()/end() on the serial port here.
-// Calling end() on a never-started or already-running UART hangs in Mbed OS DMA
-// deinitialization. The caller must call Serial2.begin(115200) before this.
-void RPLidar::begin(HardwareSerial &serialobj)
+// NOTE (Giga R1 / Mbed OS): Do NOT call serialobj.begin() or end() here.
+// On Mbed OS, calling begin() on an already-running UART internally calls end()
+// first (DMA deinit), which hangs. The caller is responsible for calling
+// Serial2.begin(115200) before invoking this method.
+bool RPLidar::begin(HardwareSerial &serialobj)
 {
     _bined_serialdev = &serialobj;
+    return true;
 }
 
 // close the currently opened serial interface
