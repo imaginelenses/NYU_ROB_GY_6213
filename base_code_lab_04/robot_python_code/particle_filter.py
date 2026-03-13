@@ -8,6 +8,7 @@ import random
 # Local libraries
 import parameters
 import data_handling
+from motion_models import *
 
 # Helper function to make sure all angles are between -pi and pi
 def angle_wrap(angle):
@@ -105,7 +106,35 @@ class Map:
         # If the direction isn't pointed towards the wall, return closest_distance.
         # Suggestion: Thoroughly test your code with unit tests before using
         
-        return 0
+
+        
+        A = np.array([wall.corner1.x, wall.corner1.y])
+        B = np.array([wall.corner2.x, wall.corner2.y])
+
+        P = np.array([state.x, state.y])
+
+        # Check where projection of AP falls on AB
+        # If it falls outside the segment, return the distance to the closest endpoint
+        # If it falls within the segment, return the distance to the projection point
+        AB = B - A
+        AP = P - A
+        proj_point = np.clip(np.dot(AP, AB) / np.dot(AB, AB), 0, 1)
+        dis = np.linalg.norm(AP - proj_point * AB)
+
+        # Build normal, then flip it to always point toward the particle
+        wall_normal = np.array([-AB[1], AB[0]])
+        particle_side = np.dot(AP, wall_normal)
+        inward_normal = wall_normal * np.sign(particle_side)
+        inward_normal /= np.linalg.norm(inward_normal)
+
+        # Particle faces the wall if its heading opposes the inward normal
+        heading = np.array([np.cos(state.theta), np.sin(state.theta)])
+        facing_wall = np.dot(heading, inward_normal) < 0
+
+        if facing_wall and dis < closest_distance:
+            return dis
+
+        return closest_distance
 
 
 # Class to hold a particle
@@ -118,27 +147,69 @@ class Particle:
     # Function to create a new random particle state within a range
     def randomize_uniformly(self, xy_range):
         ################## Add student code here ###################
-        self.state = State(0, 0, 0)
+        x_min, x_max, y_min, y_max = xy_range
+        x = np.random.uniform(x_min, x_max)
+        y = np.random.uniform(y_min, y_max)
+        theta = np.random.uniform(-np.pi, np.pi)
+        self.state = State(x, y, theta)
         self.weight = 1
 
     # Function to create a new random particle state with a normal distribution
     def randomize_around_initial_state(self, initial_state, state_stdev):
         ################## Add student code here ###################
-        self.state = State(0, 0, 0)
+        x = np.random.normal(initial_state.x, state_stdev.x)
+        y = np.random.normal(initial_state.y, state_stdev.y)
+        theta = np.random.normal(initial_state.theta, state_stdev.theta)
+        self.state = State(x, y, theta)
         self.weight = 1
         
     # Function to take a particle and "randomly" propagate it forward according to a motion model.
     def propagate_state(self, last_state, delta_encoder_counts, steering, delta_t):
         ################## Add student code here ###################
-        x = 0
-        y = 0
-        theta = 0
+        s = distance_travelled_s(delta_encoder_counts)
+        var_s = variance_distance_travelled_s(delta_encoder_counts)
+        s += random.gauss(0, math.sqrt(max(var_s, 0)))
+
+        w = rotational_velocity_w(steering)
+        var_w = variance_rotational_velocity_w(steering)
+        w += random.gauss(0, math.sqrt(max(var_w, 0)))
+
+        x_tm1, y_tm1, theta_tm1 = last_state
+
+        # w is in deg/ms from data fitting; convert to rad/s
+        # Negate: camera world frame has opposite rotation handedness from compass convention
+        w_rad_s = -w * 1000.0 * (math.pi / 180.0)
+        delta_theta = w_rad_s * delta_t
+
+        x = x_tm1 + s * math.cos(theta_tm1)
+        y = y_tm1 + s * math.sin(theta_tm1)
+        theta = theta_tm1 + delta_theta
+        theta = angle_wrap(theta)
+        
         self.state = State(x, y, theta)
         
     # Function to determine a particles weight based how well the lidar measurement matches up with the map.
     def calculate_weight(self, lidar_signal, map):
         ################## Add student code here ###################
-        self.weight = 0
+        angles = [lidar_signal.convert_hardware_angle(a) for a in lidar_signal.angles]
+        distances = [lidar_signal.convert_hardware_distance(d) for d in lidar_signal.distances]
+
+        # Convert angles to global frame
+        global_angles = [angle_wrap(self.state.theta + angle) for angle in angles]
+
+        # Calculate expected distances to walls for each angle
+        expected_distances = []
+        for angle in global_angles:
+            expected_distance = map.closest_distance_to_walls(State(self.state.x, self.state.y, angle))
+            expected_distances.append(expected_distance)
+        
+        # Calculate weight based on how close expected distances are to actual distances
+        for expected_distance, distance in zip(expected_distances, distances):
+            weight = self.gaussian(expected_distance, distance)
+            # Multiplying gives joint probability of all measurements 
+            # instead of summing which would give the average probability of measurements. 
+            self.weight *= weight
+        
         
     # Return the normal distribution function output.
     def gaussian(self, expected_distance, distance):
@@ -184,15 +255,36 @@ class ParticleSet:
     # Function to resample the particles set, i.e. make a new one with more copies of particles with higher weights.  
     def resample(self, max_weight):
         ################## Add student code here ###################
-        self.particle_list = self.particle_list
-            
+        # max_weight is unused
+        
+        # Normalize weights
+        total = sum(p.weight for p in self.particle_list)
+
+        # Resampling and reassigning weight = 1 | O(N log N)
+        new_particle_list = []
+        for p in random.choices(
+            self.particle_list,
+            weights=[p.weight / total for p in self.particle_list],
+            k=self.num_particles
+        ):
+            p = p.deepcopy()
+            p.weight = 1
+            new_particle_list.append(p)
+        self.particle_list = new_particle_list
+
+
     # Calculate the mean state. 
     def update_mean_state(self):
         ################## Add student code here ###################
         ## Be careful how you calculate the mean theta
-        self.mean_state.x = 0
-        self.mean_state.y = 0
-        self.mean_state.theta = 0
+        total_weight = sum(p.weight for p in self.particle_list)
+        self.mean_state.x = sum(p.weight * p.state.x for p in self.particle_list) / total_weight
+        self.mean_state.y = sum(p.weight * p.state.y for p in self.particle_list) / total_weight
+        
+        # Because avg(170, -170) = 0 and not 180
+        self.mean_state.theta = math.atan2(
+            sum(p.weight * math.sin(p.state.theta) for p in self.particle_list),
+            sum(p.weight * math.cos(p.state.theta) for p in self.particle_list))
         
     # Print the particle set. Useful for debugging.
     def print_particles(self):
@@ -227,14 +319,35 @@ class ParticleFilter:
         # odometry_signal has two elements, encoder_counts and steering angle
         # Next use a motion model to randomly propagate all particles from a deep copy of their current state. 
         # Be sure to use the Particle class propagate state function.
+
+        encoder_count, steering = odometry_signal
+        delta_encoder_counts = encoder_count - self.last_encoder_counts
+
+
+        for particle in self.particle_set.particle_list:
+            particle.propagate_state(
+                (particle.state.x, particle.state.y, particle.state.theta), 
+                delta_encoder_counts, 
+                steering, 
+                delta_t)
+            
+        self.last_encoder_counts = encoder_count
+
         return
         
     # Corrrect the predicted states.
     def correction(self, measurement_signal):
         ################## Add student code here ###################
         # Determine the max weight and use it to resample the particle set.
+        # max_weight is unused
         max_weight = 0
         
+        # CAlculate weights based on measurement
+        for particle in self.particle_set.particle_list:
+            particle.calculate_weight(measurement_signal, self.map)
+
+        self.particle_set.resample(max_weight)
+
     # Output to terminal the mean state.
     def print_state_estimate(self):
         print("Mean state: ", self.particle_set.mean_state.x, self.particle_set.mean_state.y, self.particle_set.mean_state.theta)
