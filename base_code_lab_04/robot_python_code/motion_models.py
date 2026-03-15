@@ -122,4 +122,9 @@ class MyMotionModel:
 
             t += delta_t 
         return t_list, x_list, y_list, theta_list
-            
+
+
+# Lab	Speed cmd	Encoder rate
+# Lab 2	70	~896 counts/s
+# Lab 3	75	~536 counts/s
+# Lab 4	72	~169 counts/s

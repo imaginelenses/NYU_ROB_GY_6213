@@ -64,8 +64,15 @@ I3 = np.array([[1, 0, 0],[0, 1, 0], [0, 0, 1]])
 covariance_plot_scale = 100
 
 # PF parameters, modify the map and num particles as you see fit.
-num_particles = 100
+num_particles = 1000
 distance_variance = 0.1  # meters^2, lidar measurement noise variance
+lidar_ray_step = 1       # use every Nth lidar ray in weight calculation (1 = all rays)
+use_obstacle_buffer = False   # True: apply a fixed penalty when measured << expected (obstacle blocks ray)
+                             # False: treat all rays with the same Gaussian likelihood
+obstacle_buffer_threshold = 0.3   # meters; if (expected - measured) > this, ray is treated as blocked
+obstacle_buffer_penalty   = -0.3  # log-weight penalty applied to blocked rays (negative)
+reinit_weight_threshold   = 1e-9 # max particle weight below which a cycle counts as "lost"
+reinit_cycles_required    = 5    # number of consecutive lost cycles before reinitializing uniformly
 # wall_corner_list = [
 #     [0, 0, 2.74, 0], 
 #     [0, 0, 0, 3.78], 

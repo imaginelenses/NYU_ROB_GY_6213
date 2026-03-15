@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 import random
+from sklearn.cluster import KMeans
 
 # Local libraries
 import parameters
@@ -90,51 +91,27 @@ class Map:
         
         self.particle_range = [min_x , max_x , min_y, max_y]
 
-    # Function to calculate the distance between any state and its closest wall, accounting for directon of the state.
+        # Precompute wall geometry as numpy arrays for vectorized ray casting
+        self._wall_A  = np.array([[w.corner1.x, w.corner1.y] for w in self.wall_list])  # (N, 2)
+        self._wall_AB = np.array([[w.corner2.x - w.corner1.x,
+                                   w.corner2.y - w.corner1.y] for w in self.wall_list])  # (N, 2)
+
+    # Function to calculate the ray-cast distance from a state to the closest wall
+    # in the direction of state.theta, using vectorized ray-segment intersection.
     def closest_distance_to_walls(self, state):
-        closest_distance = 999999999999
-        for wall in self.wall_list:
-            closest_distance = self.get_distance_to_wall(state, wall, closest_distance)
-        
-        return closest_distance
-        
-    # Function to get distance to a wall from a state, in the direction of the state's theta angle.
-    # Or return the distance currently believed to be the closest if its closer.
-    def get_distance_to_wall(self, state, wall, closest_distance):
-        ################## Add student code here ###################
-        # Use geometry to calculate the distance from the robot to the wall, for a particular direction state.theta
-        # If the direction isn't pointed towards the wall, return closest_distance.
-        # Suggestion: Thoroughly test your code with unit tests before using
-        
-
-        
-        A = np.array([wall.corner1.x, wall.corner1.y])
-        B = np.array([wall.corner2.x, wall.corner2.y])
-
-        P = np.array([state.x, state.y])
-
-        # Check where projection of AP falls on AB
-        # If it falls outside the segment, return the distance to the closest endpoint
-        # If it falls within the segment, return the distance to the projection point
-        AB = B - A
-        AP = P - A
-        proj_point = np.clip(np.dot(AP, AB) / np.dot(AB, AB), 0, 1)
-        dis = np.linalg.norm(AP - proj_point * AB)
-
-        # Build normal, then flip it to always point toward the particle
-        wall_normal = np.array([-AB[1], AB[0]])
-        particle_side = np.dot(AP, wall_normal)
-        inward_normal = wall_normal * np.sign(particle_side)
-        inward_normal /= np.linalg.norm(inward_normal)
-
-        # Particle faces the wall if its heading opposes the inward normal
-        heading = np.array([np.cos(state.theta), np.sin(state.theta)])
-        facing_wall = np.dot(heading, inward_normal) < 0
-
-        if facing_wall and dis < closest_distance:
-            return dis
-
-        return closest_distance
+        d  = np.array([math.cos(state.theta), math.sin(state.theta)])
+        P  = np.array([state.x, state.y])
+        AP = P - self._wall_A                                             # (N, 2)
+        # d × AB per wall: det[n] = d_x*AB_y[n] - d_y*AB_x[n]
+        det  = d[0] * self._wall_AB[:, 1] - d[1] * self._wall_AB[:, 0]   # (N,)
+        safe = np.abs(det) > 1e-10
+        sd   = np.where(safe, det, 1.0)
+        # t = -(AP × AB) / det  (distance along the ray)
+        t = -(AP[:, 0] * self._wall_AB[:, 1] - AP[:, 1] * self._wall_AB[:, 0]) / sd
+        # u = (AP × d) / det  (position along wall segment, must be in [0,1])
+        u = (AP[:, 1] * d[0] - AP[:, 0] * d[1]) / sd
+        mask = safe & (t > 1e-9) & (u >= 0.0) & (u <= 1.0)
+        return float(np.min(t[mask])) if mask.any() else 999999999999.0
 
 
 # Class to hold a particle
@@ -166,6 +143,9 @@ class Particle:
     # Function to take a particle and "randomly" propagate it forward according to a motion model.
     def propagate_state(self, last_state, delta_encoder_counts, steering, delta_t):
         ################## Add student code here ###################
+        if abs(delta_encoder_counts) < 1:
+            return  # Robot stationary — bicycle model has no rotation without forward motion
+
         s = distance_travelled_s(delta_encoder_counts)
         var_s = variance_distance_travelled_s(delta_encoder_counts)
         s += random.gauss(0, math.sqrt(max(var_s, 0)))
@@ -180,40 +160,87 @@ class Particle:
         # Negate: camera world frame has opposite rotation handedness from compass convention
         w_rad_s = -w * 1000.0 * (math.pi / 180.0)
         delta_theta = w_rad_s * delta_t
+        # Extra heading noise to let the PF compensate for rotation model inaccuracy
+        delta_theta += random.gauss(0, 0.03)
 
-        x = x_tm1 + s * math.cos(theta_tm1)
-        y = y_tm1 + s * math.sin(theta_tm1)
-        theta = theta_tm1 + delta_theta
-        theta = angle_wrap(theta)
+        theta_mid = theta_tm1 + delta_theta / 2
+
+        state = np.array(last_state) + np.array([
+            s * math.cos(theta_mid),
+            s * math.sin(theta_mid),
+            delta_theta
+        ]).tolist()
+
+        self.state = State(*state)
         
-        self.state = State(x, y, theta)
         
     # Function to determine a particles weight based how well the lidar measurement matches up with the map.
     def calculate_weight(self, lidar_signal, map):
         ################## Add student code here ###################
-        angles = [lidar_signal.convert_hardware_angle(a) for a in lidar_signal.angles]
-        distances = [lidar_signal.convert_hardware_distance(d) for d in lidar_signal.distances]
+        if not lidar_signal.angles:
+            return
 
-        # Convert angles to global frame
-        global_angles = [angle_wrap(self.state.theta + angle) for angle in angles]
+        # Subsample rays for speed, then convert units in one numpy pass
+        step = parameters.lidar_ray_step
+        angles_raw  = np.array(lidar_signal.angles[::step],    dtype=float)
+        distances_m = np.array(lidar_signal.distances[::step], dtype=float) / 1000.0
 
-        # Calculate expected distances to walls for each angle
-        expected_distances = []
-        for angle in global_angles:
-            expected_distance = map.closest_distance_to_walls(State(self.state.x, self.state.y, angle))
-            expected_distances.append(expected_distance)
+        # Filter out-of-range readings (RPLidar returns large values when no surface detected)
+        MAX_RANGE_M = 6.0
+        valid_range = distances_m < MAX_RANGE_M
+        angles_raw  = angles_raw[valid_range]
+        distances_m = distances_m[valid_range]
+        if len(distances_m) == 0:
+            return
+
+        # Hardware angle -> global frame: negate (CW->CCW) + deg->rad + robot heading
+        global_angles = self.state.theta - angles_raw * (math.pi / 180.0)
+        d_x = np.cos(global_angles)  # (M,)
+        d_y = np.sin(global_angles)  # (M,)
+
+        P  = np.array([self.state.x, self.state.y])
+        AP = P - map._wall_A    # (N, 2)  vector from each wall-start to particle
+        AB = map._wall_AB       # (N, 2)
+
+        # Vectorized ray-segment intersection over all M rays × N walls
+        # det[m,n] = d_x[m]*AB_y[n] - d_y[m]*AB_x[n]
+        det  = np.outer(d_x, AB[:, 1]) - np.outer(d_y, AB[:, 0])  # (M, N)
+        safe = np.abs(det) > 1e-10
+        sd   = np.where(safe, det, 1.0)
+
+        # t[m,n]: ray distance to wall n for ray m  (t = -(AP×AB) / det)
+        t_num = -(AP[:, 0] * AB[:, 1] - AP[:, 1] * AB[:, 0])      # (N,)
+        t = t_num[np.newaxis, :] / sd                               # (M, N)
+
+        # u[m,n]: fractional position along wall n  (u = (AP×d) / det)
+        u_num = np.outer(d_x, AP[:, 1]) - np.outer(d_y, AP[:, 0]) # (M, N)
+        u = u_num / sd                                               # (M, N)
+
+        valid = safe & (t > 1e-9) & (u >= 0.0) & (u <= 1.0)
+        expected_distances = np.min(np.where(valid, t, np.inf), axis=1)  # (M,)
+
+        # Robust likelihood: obstacle model for short readings, capped Gaussian for the rest
+        diff = distances_m - expected_distances
+        gaussian = -(diff ** 2) / (2.0 * parameters.distance_variance)
+        if parameters.use_obstacle_buffer:
+            contributions = np.where(
+                diff < -parameters.obstacle_buffer_threshold,  # obstacle blocks ray (measured << expected)
+                parameters.obstacle_buffer_penalty,            # fixed penalty for blocked rays
+                np.maximum(gaussian, -1.0)                     # capped Gaussian for matches + through-wall
+            )
+        else:
+            contributions = np.maximum(gaussian, -1.0)
+        log_w = float(np.sum(contributions))
+        self.weight *= math.exp(max(log_w, -700.0))
         
-        # Calculate weight based on how close expected distances are to actual distances
-        for expected_distance, distance in zip(expected_distances, distances):
-            weight = self.gaussian(expected_distance, distance)
-            # Multiplying gives joint probability of all measurements 
-            # instead of summing which would give the average probability of measurements. 
-            self.weight *= weight
         
-        
+    # Return the log of the normal distribution function output.
+    def log_gaussian(self, expected_distance, distance):
+        return -math.pow(expected_distance - distance, 2) / 2.0 / parameters.distance_variance
+
     # Return the normal distribution function output.
     def gaussian(self, expected_distance, distance):
-        return math.exp(-math.pow(expected_distance - distance, 2)/ 2 / parameters.distance_variance)
+        return math.exp(self.log_gaussian(expected_distance, distance))
 
     # Deep copy the particle
     def deepcopy(self):
@@ -231,19 +258,39 @@ class ParticleSet:
     def __init__(self, num_particles, xy_range, initial_state, state_stdev, known_start_state):
         self.num_particles = num_particles
         self.particle_list = []
+        self.xy_range = xy_range
         if known_start_state:
+            print("Known")
             self.generate_initial_state_particles(initial_state, state_stdev)
         else:
             self.generate_uniform_random_particles(xy_range)
         self.mean_state = State(0, 0, 0)
+        self._low_weight_streak = 0
         self.update_mean_state()
         
-    # Function to reset particles and random locations in the workspace.
+    # Function to reset particles on a uniform grid over the workspace.
     def generate_uniform_random_particles(self, xy_range):
-        for i in range(self.num_particles):
-            random_particle = Particle()
-            random_particle.randomize_uniformly(xy_range)
-            self.particle_list.append(random_particle)
+        x_min, x_max, y_min, y_max = xy_range
+        dx = x_max - x_min
+        dy = y_max - y_min
+        # Fix nth = cube-root of total, then scale nx/ny by aspect ratio
+        # so spatial density (particles/m²) is equal in x and y.
+        nth = max(2, int(round(self.num_particles ** (1.0 / 3.0))))
+        nxy = self.num_particles / nth
+        aspect = dx / dy
+        nx = max(1, int(round(math.sqrt(nxy * aspect))))
+        ny = max(1, int(round(math.sqrt(nxy / aspect))))
+        xs = np.linspace(x_min, x_max, nx, endpoint=False) + dx / (2 * nx)
+        ys = np.linspace(y_min, y_max, ny, endpoint=False) + dy / (2 * ny)
+        ths = np.linspace(-math.pi, math.pi, nth, endpoint=False)
+        self.particle_list = []
+        for x in xs:
+            for y in ys:
+                for th in ths:
+                    p = Particle()
+                    p.state = State(x, y, th)
+                    self.particle_list.append(p)
+        self.num_particles = len(self.particle_list)
 
     # Function to reset particles, normally distributed around the initial state. 
     def generate_initial_state_particles(self, initial_state, state_stdev):
@@ -260,6 +307,25 @@ class ParticleSet:
         # Normalize weights
         total = sum(p.weight for p in self.particle_list)
 
+        # If all weights underflowed to zero, fall back to uniform resampling
+        if total == 0.0:
+            total = 1.0
+            for p in self.particle_list:
+                p.weight = 1.0
+
+        # Reinitialize only after several consecutive cycles of very low weight
+        max_w = max(p.weight for p in self.particle_list)
+        self._last_pre_resample_max_w = max_w
+        if max_w < parameters.reinit_weight_threshold:
+            self._low_weight_streak += 1
+        else:
+            self._low_weight_streak = 0
+
+        if self._low_weight_streak >= parameters.reinit_cycles_required:
+            self._low_weight_streak = 0
+            self.generate_uniform_random_particles(self.xy_range)
+            return
+
         # Resampling and reassigning weight = 1 | O(N log N)
         new_particle_list = []
         for p in random.choices(
@@ -273,18 +339,40 @@ class ParticleSet:
         self.particle_list = new_particle_list
 
 
-    # Calculate the mean state. 
+    # Calculate the mean state using K-means to find the dominant cluster.
     def update_mean_state(self):
-        ################## Add student code here ###################
-        ## Be careful how you calculate the mean theta
-        total_weight = sum(p.weight for p in self.particle_list)
-        self.mean_state.x = sum(p.weight * p.state.x for p in self.particle_list) / total_weight
-        self.mean_state.y = sum(p.weight * p.state.y for p in self.particle_list) / total_weight
-        
-        # Because avg(170, -170) = 0 and not 180
+        # Build (N, 3) feature matrix: x, y, and angle encoded as (sin, cos) projected to a single
+        # value isn't enough — use (x, y, sin(θ), cos(θ)) but we need a scalar for KMeans.
+        # Instead cluster on (x, y) and compute circular-mean θ from the winning cluster.
+        pts = np.array([[p.state.x, p.state.y] for p in self.particle_list])
+        weights = np.array([p.weight for p in self.particle_list], dtype=float)
+        total_weight = weights.sum()
+        if total_weight == 0:
+            total_weight = 1.0
+            weights = np.ones(len(self.particle_list))
+        weights /= total_weight
+
+        n_clusters = min(3, len(np.unique(pts, axis=0)))
+        kmeans = KMeans(n_clusters=n_clusters, n_init=5, random_state=0)
+        labels = kmeans.fit_predict(pts)
+
+        # Pick the cluster whose members carry the most total weight
+        cluster_weights = np.array([
+            weights[labels == k].sum() for k in range(n_clusters)
+        ])
+        best = int(np.argmax(cluster_weights))
+        mask = labels == best
+        cluster_w = weights[mask]
+        cluster_w /= cluster_w.sum()
+
+        self.mean_state.x = float(np.dot(cluster_w, pts[mask, 0]))
+        self.mean_state.y = float(np.dot(cluster_w, pts[mask, 1]))
+
+        # Circular mean of θ within the winning cluster
+        thetas = np.array([p.state.theta for p, m in zip(self.particle_list, mask) if m])
         self.mean_state.theta = math.atan2(
-            sum(p.weight * math.sin(p.state.theta) for p in self.particle_list),
-            sum(p.weight * math.cos(p.state.theta) for p in self.particle_list))
+            float(np.dot(cluster_w, np.sin(thetas))),
+            float(np.dot(cluster_w, np.cos(thetas))))
         
     # Print the particle set. Useful for debugging.
     def print_particles(self):
@@ -383,12 +471,15 @@ class ParticleFilterPlot:
 
         # Plot state estimate
         plt.plot(state_mean.x, state_mean.y,'ro')
-        plt.plot([state_mean.x, state_mean.x+ self.dir_length*math.cos(state_mean.theta) ], [state_mean.y, state_mean.y+ self.dir_length*math.sin(state_mean.theta) ],'r')
+        plt.plot(
+            [state_mean.x, state_mean.x+ self.dir_length*math.cos(state_mean.theta) ],
+            [state_mean.y, state_mean.y+ self.dir_length*math.sin(state_mean.theta) ],'r')
         x_particles, y_particles = self.to_plot_data(particle_set)
         plt.plot(x_particles, y_particles, 'g.')
         plt.xlabel('X(m)')
         plt.ylabel('Y(m)')
         plt.axis(self.map.plot_range)
+        plt.gca().set_aspect('equal', adjustable='datalim')
         plt.grid()
         if hold_show_plot:
             plt.show()
@@ -406,6 +497,85 @@ class ParticleFilterPlot:
         return x_list, y_list
         
 
+def find_initial_pose(map_obj, lidar_signal):
+    """Grid-search the first LiDAR scan to find the best (x, y, theta)."""
+    step = parameters.lidar_ray_step
+    angles_raw  = np.array(lidar_signal.angles[::step],    dtype=float)
+    distances_m = np.array(lidar_signal.distances[::step], dtype=float) / 1000.0
+
+    # Filter out-of-range readings
+    MAX_RANGE_M = 6.0
+    valid_range = distances_m < MAX_RANGE_M
+    angles_raw  = angles_raw[valid_range]
+    distances_m = distances_m[valid_range]
+
+    AB     = map_obj._wall_AB       # (N, 2)
+    wall_A = map_obj._wall_A        # (N, 2)
+
+    x_lo, x_hi, y_lo, y_hi = map_obj.particle_range
+    best_lw = -np.inf
+    best_pose = (0.0, 0.0, 0.0)
+
+    # --- coarse pass (0.2 m, 10°) ---
+    xs  = np.arange(x_lo, x_hi + 0.01, 0.2)
+    ys  = np.arange(y_lo, y_hi + 0.01, 0.2)
+    ths = np.arange(-math.pi, math.pi, math.radians(10))
+
+    for x in xs:
+        for y in ys:
+            P    = np.array([x, y])
+            AP   = P - wall_A                                              # (N, 2)
+            t_num = -(AP[:, 0] * AB[:, 1] - AP[:, 1] * AB[:, 0])         # (N,)
+            for th in ths:
+                ga  = th - angles_raw * (math.pi / 180.0)
+                dx  = np.cos(ga)
+                dy  = np.sin(ga)
+                det = np.outer(dx, AB[:, 1]) - np.outer(dy, AB[:, 0])     # (M, N)
+                safe = np.abs(det) > 1e-10
+                sd   = np.where(safe, det, 1.0)
+                t    = t_num[np.newaxis, :] / sd
+                u    = (np.outer(dx, AP[:, 1]) - np.outer(dy, AP[:, 0])) / sd
+                valid = safe & (t > 1e-9) & (u >= 0.0) & (u <= 1.0)
+                exp_d = np.min(np.where(valid, t, np.inf), axis=1)
+                diff  = distances_m - exp_d
+                gauss = -(diff ** 2) / (2.0 * parameters.distance_variance)
+                contrib = np.where(diff < -0.3, -0.3, np.maximum(gauss, -1.0))
+                lw = float(np.sum(contrib))
+                if lw > best_lw:
+                    best_lw   = lw
+                    best_pose = (x, y, th)
+
+    # --- fine refinement (0.05 m, 2°) around the coarse best ---
+    bx, by, bth = best_pose
+    for x in np.arange(bx - 0.2, bx + 0.201, 0.05):
+        for y in np.arange(by - 0.2, by + 0.201, 0.05):
+            P    = np.array([x, y])
+            AP   = P - wall_A
+            t_num = -(AP[:, 0] * AB[:, 1] - AP[:, 1] * AB[:, 0])
+            for th in np.arange(bth - math.radians(10), bth + math.radians(10.01), math.radians(2)):
+                ga  = th - angles_raw * (math.pi / 180.0)
+                dx  = np.cos(ga)
+                dy  = np.sin(ga)
+                det = np.outer(dx, AB[:, 1]) - np.outer(dy, AB[:, 0])
+                safe = np.abs(det) > 1e-10
+                sd   = np.where(safe, det, 1.0)
+                t    = t_num[np.newaxis, :] / sd
+                u    = (np.outer(dx, AP[:, 1]) - np.outer(dy, AP[:, 0])) / sd
+                valid = safe & (t > 1e-9) & (u >= 0.0) & (u <= 1.0)
+                exp_d = np.min(np.where(valid, t, np.inf), axis=1)
+                diff  = distances_m - exp_d
+                gauss = -(diff ** 2) / (2.0 * parameters.distance_variance)
+                contrib = np.where(diff < -0.3, -0.3, np.maximum(gauss, -1.0))
+                lw = float(np.sum(contrib))
+                if lw > best_lw:
+                    best_lw   = lw
+                    best_pose = (x, y, th)
+
+    print(f"Pre-localization: ({best_pose[0]:.3f}, {best_pose[1]:.3f}, "
+          f"{math.degrees(best_pose[2]):.1f}°)  log_w={best_lw:.2f}")
+    return State(best_pose[0], best_pose[1], best_pose[2])
+
+
 # Function used to test your PF offline with logged data.
 def offline_pf():
     
@@ -413,14 +583,28 @@ def offline_pf():
     map = Map(parameters.wall_corner_list)
 
     # Get data to filter
-    filename = './data/robot_data_0_0_25_02_26_21_41_33.pkl'
+    # filename = './data/robot_data_0_0_25_02_26_21_41_33.pkl'
+
+    filename = './data/robot_data_73_-20_13_03_26_19_01_49.pkl'
     pf_data = data_handling.get_file_data_for_pf(filename)
 
-    # Instantiate PF with no initial guess
-    particle_filter = ParticleFilter(parameters.num_particles, map, initial_state = State(0.5, 2.0, 1.57), state_stdev = State(0.1,0.1,0.1), known_start_state=True, encoder_counts_0=pf_data[0][2].encoder_counts)
+    # Automatic initial-pose estimation from first LiDAR scan
+    # initial_pose = find_initial_pose(map, pf_data[0][2])
+    initial_pose = State(2, 2, 90)
+    particle_filter = ParticleFilter(
+        parameters.num_particles,
+        map, 
+        initial_state=initial_pose, 
+        state_stdev=State(0.3, 0.3, 0.3), 
+        known_start_state=True, 
+        encoder_counts_0=pf_data[0][2].encoder_counts
+    )
 
     # Create plotting tool for particles
     particle_filter_plot = ParticleFilterPlot(map)
+
+    # Plot initial uniform grid before any updates
+    particle_filter_plot.update(particle_filter.particle_set.mean_state, particle_filter.particle_set, pf_data[0][2], False)
 
     # Loop over pf data
     for t in range(1, len(pf_data)):
@@ -441,3 +625,4 @@ def offline_pf():
 ####### MAIN #######
 if __name__ == '__main__':
     offline_pf()
+

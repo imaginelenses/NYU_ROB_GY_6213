@@ -41,9 +41,7 @@ Servo myServo;
 #define EncoderOutputA 4          // Encoder output pin A
 #define EncoderOutputB 5          // Encoder output pin B
 #define steering_angle_center 96  // REPLACE with team center angle for servor steering
-int a_state;
-int encoder_a_last_state; 
-int encoder_count;
+volatile int encoder_count;       // volatile: modified inside ISR
 
 // Structure for storing control signals received from laptop
 struct ControlSignal {
@@ -140,9 +138,10 @@ void setup()
   myServo.attach(ServoPin);
   myServo.write(steering_angle_center);
 
-  // Set up encoder
+  // Set up encoder (interrupt-driven so pulses aren't missed while LiDAR blocks)
   pinMode (EncoderOutputA, INPUT);
   pinMode (EncoderOutputB, INPUT);
+  attachInterrupt(digitalPinToInterrupt(EncoderOutputA), encoder_isr, CHANGE);
 
   // Set up timers for message sends and receives over bluetooth
   last_time_rx = millis();
@@ -260,20 +259,17 @@ void lidar_update() {
   }
 }
 
-// Get new encoder measurements
-void encoder_update() { 
-   a_state = digitalRead(EncoderOutputA); // Reads the "current" state of the outputA
-   // If the previous and the current state of the outputA are different, that means a Pulse has occured
-   if (a_state != encoder_a_last_state){     
-     // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-     if (digitalRead(EncoderOutputB) != a_state) { 
-       encoder_count ++;
-     } else {
-       encoder_count --;
-     }
-   } 
-   encoder_a_last_state = a_state; // Updates the previous state of the outputA with the current state
- }
+// Encoder ISR — called on every CHANGE of EncoderOutputA
+void encoder_isr() {
+  if (digitalRead(EncoderOutputB) != digitalRead(EncoderOutputA)) {
+    encoder_count++;
+  } else {
+    encoder_count--;
+  }
+}
+
+// Legacy wrapper (now a no-op; counting happens in ISR)
+void encoder_update() { }
 
 // Send a message with sensor signals to the laptop, but only after a preset time, e.g. 100 ms
 void send_sensor_signal(SensorSignal sensor_signal)
