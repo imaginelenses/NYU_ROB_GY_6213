@@ -1,0 +1,57 @@
+\relax 
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {II}Method}{1}{}\protected@file@percent }
+\newlabel{sec:method}{{II}{1}{}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}System Overview}{1}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces The four-wheeled robot platform with the RPLidar A1 mounted on the top deck.}}{1}{}\protected@file@percent }
+\newlabel{fig:robot}{{1}{1}{}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Euclidean Distance Transform Map}{1}{}\protected@file@percent }
+\newlabel{eq:edt}{{1}{1}{}{equation.1}{}}
+\citation{thrun}
+\citation{williams}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces (a)~EDT clearance map: brighter colours indicate larger distance to the nearest wall. (b)~MPPI wall cost field with an example Dijkstra reference path (cyan) from a start (green) to a goal (red). The cost field is saturated at 80 for display; cells inside the wall boundary carry a hard penalty of 1000.}}{2}{}\protected@file@percent }
+\newlabel{fig:edt}{{2}{2}{}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Dijkstra Reference Path}{2}{}\protected@file@percent }
+\newlabel{eq:edge_weight}{{2}{2}{}{equation.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-D}}Particle Filter Localization}{2}{}\protected@file@percent }
+\newlabel{subsec:pf}{{\mbox  {II-D}}{2}{}{subsection.2.4}{}}
+\newlabel{eq:weight}{{3}{2}{}{equation.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-E}}MPPI Control}{2}{}\protected@file@percent }
+\newlabel{subsec:mppi}{{\mbox  {II-E}}{2}{}{subsection.2.5}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {II-E}1}Trajectory Sampling}{2}{}\protected@file@percent }
+\newlabel{eq:u_sample}{{4}{2}{}{equation.4}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {II-E}2}Cost Function}{2}{}\protected@file@percent }
+\newlabel{eq:total_cost}{{5}{2}{}{equation.5}{}}
+\newlabel{eq:wall_cost}{{6}{2}{}{equation.6}{}}
+\newlabel{eq:path_cost}{{7}{2}{}{equation.7}{}}
+\newlabel{eq:goal_cost}{{8}{3}{}{equation.8}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {II-E}3}Control Update and Stopping}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {III}Experiment Design}{3}{}\protected@file@percent }
+\newlabel{sec:design}{{III}{3}{}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Hardware Platform}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Map Acquisition}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Particle Filter Validation}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}MPPI Navigation Trial}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Experimental Results}{3}{}\protected@file@percent }
+\newlabel{sec:results}{{IV}{3}{}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Particle Filter Convergence}{3}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Particle spread for three initialization conditions. Position spread (top) and heading spread (bottom) both converge within 1\,s of robot motion.}}{3}{}\protected@file@percent }
+\newlabel{fig:convergence}{{3}{3}{}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Control Loop Timing}{3}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Per-stage control loop timing (50 LiDAR rays, $K{=}100$, $T{=}60$)}}{3}{}\protected@file@percent }
+\newlabel{tab:timing}{{I}{3}{}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}MPPI Cost Tuning}{3}{}\protected@file@percent }
+\bibcite{thrun}{1}
+\bibcite{williams}{2}
+\bibcite{meijster}{3}
+\bibcite{dijkstra}{4}
+\bibcite{lecture_notes}{5}
+\bibcite{imaginelenses}{6}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces PF mean trajectories with 95\% confidence ellipses for good, bad, and unknown initial conditions. The black polygon is the room boundary.}}{4}{}\protected@file@percent }
+\newlabel{fig:trajectory}{{4}{4}{}{figure.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Final MPPI hyperparameters}}{4}{}\protected@file@percent }
+\newlabel{tab:mppi_params}{{II}{4}{}{table.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Conclusion}{4}{}\protected@file@percent }
+\newlabel{sec:conclusion}{{V}{4}{}{section.5}{}}
+\@writefile{toc}{\contentsline {section}{References}{4}{}\protected@file@percent }
+\gdef \@abspage@last{4}
